@@ -184,7 +184,7 @@ fn spec_alpha_beta(
 
     let moves = generate_legal_moves(board);
     if moves.is_empty() {
-        return -900_000 - ply as i32;
+        return -(crate::search::MATE_SCORE - ply as i32);
     }
 
     let mut best      = -1_000_000i32;
