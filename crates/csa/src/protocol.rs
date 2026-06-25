@@ -43,7 +43,7 @@ impl Default for Config {
             port:         4081,
             user:         "anonymous".into(),
             password:     "anonymous".into(),
-            game_id:      "floodgate-600-10S".into(),
+            game_id:      "floodgate-300-10F".into(),
             hash_mb:      256,
             resign_score: -2000,
             keep_alive:   false,
@@ -308,11 +308,11 @@ impl CsaClient {
     }
 
     fn byoyomi_from_game_id(&self) -> u64 {
-        // Parse last segment, stripping optional trailing 'S', e.g. "10S" or "10" → 10_000 ms
+        // Parse last segment, stripping optional trailing 'S'/'F', e.g. "10S", "10F", "10" → 10_000 ms
         let id = &self.config.game_id;
         if let Some(pos) = id.rfind('-') {
             let mut suffix = &id[pos + 1..];
-            if suffix.ends_with('S') { suffix = &suffix[..suffix.len() - 1]; }
+            if suffix.ends_with('S') || suffix.ends_with('F') { suffix = &suffix[..suffix.len() - 1]; }
             if let Ok(secs) = suffix.parse::<u64>() {
                 return secs * 1000;
             }

@@ -6,7 +6,7 @@
 //! Options:
 //!   --server <host>    (default: wdoor.c.u-tokyo.ac.jp)
 //!   --port <port>      (default: 4081)
-//!   --game <id>        (default: floodgate-600-10S)
+//!   --game <id>        (default: floodgate-300-10F)
 //!   --hash <MB>        hash table size (default: 256)
 //!   --weights <file>   NNUE weight file
 //!   --resign <cp>      resign threshold centipawns (default: 2000)
@@ -115,7 +115,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("  --server <host>    floodgate server (default: wdoor.c.u-tokyo.ac.jp)");
     eprintln!("  --port <port>      TCP port (default: 4081)");
-    eprintln!("  --game <id>        game ID (default: floodgate-600-10S)");
+    eprintln!("  --game <id>        game ID (default: floodgate-300-10F)");
     eprintln!("  --hash <MB>        hash table MB (default: 256)");
     eprintln!("  --weights <file>   NNUE weight file");
     eprintln!("  --resign <cp>      resign threshold in centipawns (default: 2000)");
