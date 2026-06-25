@@ -25,29 +25,29 @@ use crate::moves::{csa_to_move, move_to_csa};
 // ---- Public config ----
 
 pub struct Config {
-    pub server:       String,
-    pub port:         u16,
-    pub user:         String,
-    pub password:     String,
-    pub game_id:      String,
-    pub hash_mb:      usize,
-    pub resign_score: i32,  // centipawns (negative threshold)
-    pub keep_alive:   bool, // reconnect after each game
-    pub max_depth:    u32,
+    pub server: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub game_id: String,
+    pub hash_mb: usize,
+    pub resign_score: i32, // centipawns (negative threshold)
+    pub keep_alive: bool,  // reconnect after each game
+    pub max_depth: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            server:       "wdoor.c.u-tokyo.ac.jp".into(),
-            port:         4081,
-            user:         "anonymous".into(),
-            password:     "anonymous".into(),
-            game_id:      "floodgate-300-10F".into(),
-            hash_mb:      256,
+            server: "wdoor.c.u-tokyo.ac.jp".into(),
+            port: 4081,
+            user: "anonymous".into(),
+            password: "anonymous".into(),
+            game_id: "floodgate-300-10F".into(),
+            hash_mb: 256,
             resign_score: -2000,
-            keep_alive:   false,
-            max_depth:    50,
+            keep_alive: false,
+            max_depth: 50,
         }
     }
 }
@@ -55,17 +55,22 @@ impl Default for Config {
 // ---- Game result ----
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameResult { Win, Lose, Draw, Aborted }
+pub enum GameResult {
+    Win,
+    Lose,
+    Draw,
+    Aborted,
+}
 
 // ---- Client ----
 
 pub struct CsaClient {
-    reader:        BufReader<TcpStream>,
-    writer:        TcpStream,
+    reader: BufReader<TcpStream>,
+    writer: TcpStream,
     #[allow(dead_code)]
-    tt:            Arc<Tt>, // kept alive to share with Searcher
-    searcher:      Searcher,
-    config:        Config,
+    tt: Arc<Tt>, // kept alive to share with Searcher
+    searcher: Searcher,
+    config: Config,
 }
 
 impl CsaClient {
@@ -83,7 +88,13 @@ impl CsaClient {
         let tt = Tt::new(config.hash_mb);
         let searcher = Searcher::new(tt.clone());
 
-        let mut client = CsaClient { reader, writer, tt, searcher, config };
+        let mut client = CsaClient {
+            reader,
+            writer,
+            tt,
+            searcher,
+            config,
+        };
         client.login()?;
         Ok(client)
     }
@@ -94,9 +105,11 @@ impl CsaClient {
             self.request_game()?;
             match self.play_game() {
                 Ok(result) => eprintln!("[csa] game over: {result:?}"),
-                Err(e)     => eprintln!("[csa] game error: {e}"),
+                Err(e) => eprintln!("[csa] game error: {e}"),
             }
-            if !self.config.keep_alive { break; }
+            if !self.config.keep_alive {
+                break;
+            }
             eprintln!("[csa] waiting for next game…");
         }
         Ok(())
@@ -106,7 +119,7 @@ impl CsaClient {
 
     fn send(&mut self, msg: &str) -> io::Result<()> {
         eprintln!("[csa] >> {msg}");
-        write!(self.writer, "{msg}\n")?;
+        writeln!(self.writer, "{msg}")?;
         self.writer.flush()
     }
 
@@ -121,10 +134,11 @@ impl CsaClient {
     fn recv_expect(&mut self, prefix: &str) -> io::Result<String> {
         loop {
             let line = self.recv()?;
-            if line.starts_with(prefix) { return Ok(line); }
+            if line.starts_with(prefix) {
+                return Ok(line);
+            }
             if line.starts_with('#') || line.starts_with('%') {
-                return Err(io::Error::new(io::ErrorKind::Other,
-                    format!("unexpected: {line}")));
+                return Err(io::Error::other(format!("unexpected: {line}")));
             }
         }
     }
@@ -149,14 +163,18 @@ impl CsaClient {
 
     fn play_game(&mut self) -> io::Result<GameResult> {
         // Read game header until START
-        let our_name  = self.config.user.clone();
+        let our_name = self.config.user.clone();
         let mut our_color = Color::Black; // updated when we see BEGIN
 
         loop {
             let line = self.recv()?;
             if line.starts_with("BEGIN ") {
                 // "BEGIN GameID+black_player+white_player"
-                let parts: Vec<&str> = line[6..].split('+').collect();
+                let parts: Vec<&str> = line
+                    .strip_prefix("BEGIN ")
+                    .unwrap_or("")
+                    .split('+')
+                    .collect();
                 if parts.len() >= 3 {
                     let black = parts[1];
                     our_color = if black.starts_with(&our_name) {
@@ -175,14 +193,17 @@ impl CsaClient {
 
         eprintln!("[csa] game started, we are {:?}", our_color);
 
-        let mut board             = Board::startpos();
+        let mut board = Board::startpos();
         board.refresh_acc();
         let mut time_left_ms: u64 = self.initial_time_from_game_id();
-        let byoyomi_ms: u64       = self.byoyomi_from_game_id();
-        let mut moves_str         = String::new();
+        let byoyomi_ms: u64 = self.byoyomi_from_game_id();
+        let mut moves_str = String::new();
 
-        eprintln!("[csa] time budget: {}s main + {}s byoyomi",
-            time_left_ms / 1000, byoyomi_ms / 1000);
+        eprintln!(
+            "[csa] time budget: {}s main + {}s byoyomi",
+            time_left_ms / 1000,
+            byoyomi_ms / 1000
+        );
 
         loop {
             let stm = board.side_to_move;
@@ -190,20 +211,28 @@ impl CsaClient {
             if stm == our_color {
                 // Our turn — search and send
                 let result = self.think_and_send(
-                    &mut board, our_color, &moves_str,
-                    time_left_ms, byoyomi_ms,
+                    &mut board,
+                    our_color,
+                    &moves_str,
+                    time_left_ms,
+                    byoyomi_ms,
                 )?;
                 if let Some(m) = result.move_made {
-                    if !moves_str.is_empty() { moves_str.push(' '); }
+                    if !moves_str.is_empty() {
+                        moves_str.push(' ');
+                    }
                     moves_str.push_str(&shogi_core::sfen::move_to_usi(m));
                     // Read T{sec} from server and deduct used time from our bank
-                    if let Ok(t_line) = self.recv_time_or_move() {
-                        if let Some(used_sec) = parse_time_line(&t_line) {
-                            let used_ms = used_sec * 1000;
-                            time_left_ms = time_left_ms.saturating_sub(used_ms);
-                            eprintln!("[csa] used {}s, remaining {}s",
-                                used_sec, time_left_ms / 1000);
-                        }
+                    if let Ok(t_line) = self.recv_time_or_move()
+                        && let Some(used_sec) = parse_time_line(&t_line)
+                    {
+                        let used_ms = used_sec * 1000;
+                        time_left_ms = time_left_ms.saturating_sub(used_ms);
+                        eprintln!(
+                            "[csa] used {}s, remaining {}s",
+                            used_sec,
+                            time_left_ms / 1000
+                        );
                     }
                 } else {
                     // Resigned
@@ -220,7 +249,9 @@ impl CsaClient {
                         // Opponent's move
                         if let Some(m) = csa_to_move(&mut board, &line) {
                             board.do_move(m);
-                            if !moves_str.is_empty() { moves_str.push(' '); }
+                            if !moves_str.is_empty() {
+                                moves_str.push(' ');
+                            }
                             moves_str.push_str(&shogi_core::sfen::move_to_usi(m));
                         } else {
                             eprintln!("[csa] unparseable opponent move: {line}");
@@ -246,31 +277,38 @@ impl CsaClient {
 
     fn think_and_send(
         &mut self,
-        board:        &mut Board,
-        our_color:    Color,
-        _moves_str:   &str,
+        board: &mut Board,
+        our_color: Color,
+        _moves_str: &str,
         time_left_ms: u64,
-        byoyomi_ms:   u64,
+        byoyomi_ms: u64,
     ) -> io::Result<ThinkResult> {
         // Dynamic time allocation:
         //   - Allot 1/30 of remaining main time per move (≈30-move horizon),
         //     capped at 3× byoyomi to avoid spending too much in one move.
         //   - Always keep byoyomi_ms * 4/5 as a floor (safe margin for I/O).
         //   - If main time is exhausted, fall back to byoyomi floor only.
-        let floor_ms  = if byoyomi_ms > 0 { byoyomi_ms * 4 / 5 } else { 500 };
-        let allot_ms  = if time_left_ms > 1000 {
+        let floor_ms = if byoyomi_ms > 0 {
+            byoyomi_ms * 4 / 5
+        } else {
+            500
+        };
+        let allot_ms = if time_left_ms > 1000 {
             let share = time_left_ms / 30;
-            let cap   = byoyomi_ms.saturating_mul(3).max(floor_ms);
+            let cap = byoyomi_ms.saturating_mul(3).max(floor_ms);
             share.min(cap)
         } else {
             0
         };
         let time_limit = Some(Duration::from_millis((floor_ms + allot_ms).max(100)));
 
-        let info = self.searcher.search(board, SearchConfig {
-            max_depth: self.config.max_depth,
-            time_limit,
-        });
+        let info = self.searcher.search(
+            board,
+            SearchConfig {
+                max_depth: self.config.max_depth,
+                time_limit,
+            },
+        );
 
         if info.score < self.config.resign_score {
             eprintln!("[csa] resigning (score={})", info.score);
@@ -299,10 +337,10 @@ impl CsaClient {
         let id = &self.config.game_id;
         let parts: Vec<&str> = id.splitn(3, '-').collect();
         // "floodgate-600-10" → parts[1] = "600"
-        if parts.len() >= 2 {
-            if let Ok(secs) = parts[1].parse::<u64>() {
-                return secs * 1000;
-            }
+        if parts.len() >= 2
+            && let Ok(secs) = parts[1].parse::<u64>()
+        {
+            return secs * 1000;
         }
         600_000 // default 10 min
     }
@@ -312,7 +350,9 @@ impl CsaClient {
         let id = &self.config.game_id;
         if let Some(pos) = id.rfind('-') {
             let mut suffix = &id[pos + 1..];
-            if suffix.ends_with('S') || suffix.ends_with('F') { suffix = &suffix[..suffix.len() - 1]; }
+            if suffix.ends_with('S') || suffix.ends_with('F') {
+                suffix = &suffix[..suffix.len() - 1];
+            }
             if let Ok(secs) = suffix.parse::<u64>() {
                 return secs * 1000;
             }
@@ -326,10 +366,15 @@ struct ThinkResult {
 }
 
 fn parse_game_end(line: &str) -> GameResult {
-    if line.contains("WIN")  { GameResult::Win  }
-    else if line.contains("LOSE") { GameResult::Lose }
-    else if line.contains("DRAW") { GameResult::Draw }
-    else { GameResult::Aborted }
+    if line.contains("WIN") {
+        GameResult::Win
+    } else if line.contains("LOSE") {
+        GameResult::Lose
+    } else if line.contains("DRAW") {
+        GameResult::Draw
+    } else {
+        GameResult::Aborted
+    }
 }
 
 /// Parse a CSA `T{n}` line (seconds used for the last move) → Some(n).

@@ -4,9 +4,9 @@
 
 **JANOS** = *Jet-speed Ancestry Node Optimizer of Shogi*
 
-世界最高峰の将棋AI（水匠・翡翠クラス）を超えることを目標とした、Rust製の投機的並列将棋AIエンジンです。
+投機的並列探索とNNUEスタイルの評価関数を探求する、Rust製の将棋AIエンジンです。floodgateでの実戦強化を目標としています。
 
-Rustの所有権システムと型システムを活用することで、**超攻撃的な投機的並列探索と安全な即時キャンセル機構**を実現します。これはC++では安全に実装することがほぼ不可能な手法です。
+Rustの所有権システムと型システムを活用することで、**投機的並列探索と安全な即時キャンセル機構**を実現します。これはC++では安全に実装することが難しいパターンです。
 
 ## 名前の由来
 
@@ -119,11 +119,16 @@ cargo run --release -p match-runner -- \
 cargo run --release -p train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
-## エージェントの役割
+## ベンチマーク
 
-マルチエージェント協調開発モデルの詳細は [AGENTS.md](AGENTS.md) を参照してください。
+Apple M4 Pro での実測値（`cargo build --release`、`target-cpu=native`）。
 
-## タスク管理
+| 指標 | 値 |
+|------|---|
+| 合法手生成（初期局面） | ~5.5 µs / 呼び出し |
+| NNUE 評価（初期局面） | ~18.7 ns / 呼び出し |
+| 探索 depth 4（初期局面） | ~3.6 ms |
+| 探索 NPS（NNUE、10 秒秒読み） | ~1.1M nps、depth 13 |
+| テストスイート | 15 テスト全通過 |
 
-詳細なマイルストーンチェックリストは [tasks/todo.md](tasks/todo.md) を参照してください。  
-設計上の教訓は [tasks/lessons.md](tasks/lessons.md) を参照してください。
+floodgate 対局結果: 収集中（現在 `janos_20260623` として接続）。

@@ -27,9 +27,9 @@ mod tests {
     #[test]
     fn perft_startpos() {
         let mut board = Board::startpos();
-        assert_eq!(perft(&mut board, 1), 30,      "perft(1)");
-        assert_eq!(perft(&mut board, 2), 900,     "perft(2)");
-        assert_eq!(perft(&mut board, 3), 25_470,  "perft(3)");
+        assert_eq!(perft(&mut board, 1), 30, "perft(1)");
+        assert_eq!(perft(&mut board, 2), 900, "perft(2)");
+        assert_eq!(perft(&mut board, 3), 25_470, "perft(3)");
         assert_eq!(perft(&mut board, 4), 719_731, "perft(4)");
     }
 
@@ -47,30 +47,38 @@ mod tests {
     fn sfen_startpos_hash_matches() {
         use sfen::STARTPOS_SFEN;
         let parsed = Board::from_sfen(STARTPOS_SFEN).expect("parse startpos SFEN");
-        assert_eq!(parsed.hash(), Board::startpos().hash(),
-            "hash mismatch: SFEN parse vs Board::startpos()");
+        assert_eq!(
+            parsed.hash(),
+            Board::startpos().hash(),
+            "hash mismatch: SFEN parse vs Board::startpos()"
+        );
     }
 
     /// Round-trip: Board → SFEN → Board must preserve the hash.
     #[test]
     fn sfen_roundtrip_hash() {
-        use sfen::board_to_sfen;
         use movegen::generate_legal_moves;
+        use sfen::board_to_sfen;
 
         let mut board = Board::startpos();
 
         // Play 4 moves (capture opportunities arise quickly in deep lines)
         for depth in 0..4 {
             let moves = generate_legal_moves(&mut board);
-            if moves.is_empty() { break; }
+            if moves.is_empty() {
+                break;
+            }
             board.do_move(moves[depth % moves.len()]);
         }
 
-        let sfen_str  = board_to_sfen(&board);
-        let reparsed  = Board::from_sfen(&sfen_str)
+        let sfen_str = board_to_sfen(&board);
+        let reparsed = Board::from_sfen(&sfen_str)
             .unwrap_or_else(|e| panic!("re-parse failed: {e}\nsfen: {sfen_str}"));
-        assert_eq!(board.hash(), reparsed.hash(),
-            "hash mismatch after SFEN round-trip\nsfen: {sfen_str}");
+        assert_eq!(
+            board.hash(),
+            reparsed.hash(),
+            "hash mismatch after SFEN round-trip\nsfen: {sfen_str}"
+        );
     }
 
     /// Round-trip after capturing moves (verifies hand-piece hashing).
@@ -83,24 +91,30 @@ mod tests {
         use movegen::generate_legal_moves;
         for i in 0..10 {
             let moves = generate_legal_moves(&mut board);
-            if moves.is_empty() { break; }
+            if moves.is_empty() {
+                break;
+            }
             board.do_move(moves[i % moves.len()]);
         }
 
         let sfen1 = board_to_sfen(&board);
-        let b2    = Board::from_sfen(&sfen1)
-            .unwrap_or_else(|e| panic!("parse failed: {e}\nsfen: {sfen1}"));
+        let b2 =
+            Board::from_sfen(&sfen1).unwrap_or_else(|e| panic!("parse failed: {e}\nsfen: {sfen1}"));
         let sfen2 = board_to_sfen(&b2);
 
-        assert_eq!(board.hash(), b2.hash(), "hash mismatch\nsfen1: {sfen1}\nsfen2: {sfen2}");
+        assert_eq!(
+            board.hash(),
+            b2.hash(),
+            "hash mismatch\nsfen1: {sfen1}\nsfen2: {sfen2}"
+        );
         assert_eq!(sfen1, sfen2, "SFEN strings differ after round-trip");
     }
 
     /// USI move round-trip: move_to_usi → move_from_usi must recover the original move.
     #[test]
     fn usi_move_roundtrip() {
-        use sfen::{move_to_usi, move_from_usi};
         use movegen::generate_legal_moves;
+        use sfen::{move_from_usi, move_to_usi};
 
         let mut board = Board::startpos();
         let moves = generate_legal_moves(&mut board);
@@ -108,8 +122,8 @@ mod tests {
 
         for m in &moves {
             let s = move_to_usi(*m);
-            let m2 = move_from_usi(&s, &board)
-                .unwrap_or_else(|e| panic!("parse '{s}' failed: {e}"));
+            let m2 =
+                move_from_usi(&s, &board).unwrap_or_else(|e| panic!("parse '{s}' failed: {e}"));
             assert_eq!(*m, m2, "move round-trip failed for '{s}'");
         }
     }
@@ -117,18 +131,18 @@ mod tests {
     /// parse_position_cmd with startpos + moves must match playing moves manually.
     #[test]
     fn position_cmd_matches_manual() {
-        use sfen::{parse_position_cmd, move_to_usi};
         use movegen::generate_legal_moves;
+        use sfen::{move_to_usi, parse_position_cmd};
 
         let mut board = Board::startpos();
-        let moves     = generate_legal_moves(&mut board);
-        let m         = moves[0];
+        let moves = generate_legal_moves(&mut board);
+        let m = moves[0];
 
-        let tok   = board.do_move(m);
+        let tok = board.do_move(m);
         let expected_hash = board.hash();
         board.undo_move(tok);
 
-        let cmd   = format!("startpos moves {}", move_to_usi(m));
+        let cmd = format!("startpos moves {}", move_to_usi(m));
         let parsed = parse_position_cmd(&cmd).expect("parse position cmd");
         assert_eq!(parsed.hash(), expected_hash, "position cmd hash mismatch");
     }
@@ -158,17 +172,29 @@ mod tests {
 
         for m1 in moves1.iter().take(5) {
             let tok1 = board.do_move(*m1);
-            assert_eq!(board.acc, fresh_acc(&board), "depth 1 mismatch after {m1:?}");
+            assert_eq!(
+                board.acc,
+                fresh_acc(&board),
+                "depth 1 mismatch after {m1:?}"
+            );
 
             let moves2 = generate_legal_moves(&mut board);
             for m2 in moves2.iter().take(5) {
                 let tok2 = board.do_move(*m2);
-                assert_eq!(board.acc, fresh_acc(&board), "depth 2 mismatch after {m2:?}");
+                assert_eq!(
+                    board.acc,
+                    fresh_acc(&board),
+                    "depth 2 mismatch after {m2:?}"
+                );
 
                 let moves3 = generate_legal_moves(&mut board);
                 for m3 in moves3.iter().take(3) {
                     let tok3 = board.do_move(*m3);
-                    assert_eq!(board.acc, fresh_acc(&board), "depth 3 mismatch after {m3:?}");
+                    assert_eq!(
+                        board.acc,
+                        fresh_acc(&board),
+                        "depth 3 mismatch after {m3:?}"
+                    );
                     board.undo_move(tok3);
                     assert_eq!(board.acc, fresh_acc(&board), "undo depth 3 mismatch");
                 }
@@ -205,13 +231,19 @@ mod tests {
         let mut board = Board::startpos();
         // Reach a position with promotable moves (at least 5 plies)
         fn first_promoting_move(b: &mut Board, depth: u32) -> Option<mv::Move> {
-            if depth == 0 { return None; }
+            if depth == 0 {
+                return None;
+            }
             for m in generate_legal_moves(b) {
-                if m.promote { return Some(m); }
+                if m.promote {
+                    return Some(m);
+                }
                 let tok = b.do_move(m);
                 let r = first_promoting_move(b, depth - 1);
                 b.undo_move(tok);
-                if r.is_some() { return r; }
+                if r.is_some() {
+                    return r;
+                }
             }
             None
         }
@@ -219,9 +251,17 @@ mod tests {
         if let Some(m) = first_promoting_move(&mut board, 7) {
             // navigate to the position where m is legal
             let tok = board.do_move(m);
-            assert_eq!(board.acc, fresh_acc(&board), "acc wrong after promotion {m:?}");
+            assert_eq!(
+                board.acc,
+                fresh_acc(&board),
+                "acc wrong after promotion {m:?}"
+            );
             board.undo_move(tok);
-            assert_eq!(board.acc, fresh_acc(&board), "acc wrong after undo of promotion");
+            assert_eq!(
+                board.acc,
+                fresh_acc(&board),
+                "acc wrong after undo of promotion"
+            );
         }
     }
 
@@ -234,7 +274,7 @@ mod tests {
 
         for m in generate_legal_moves(&mut board) {
             let tok = board.do_move(m);
-            let h1  = board.hash();
+            let h1 = board.hash();
             board.undo_move(tok);
             assert_eq!(board.hash(), h0, "hash not restored after undo of {m:?}");
 
@@ -251,8 +291,14 @@ mod tests {
         use search::{SearchConfig, Searcher};
         use tt::Tt;
         let mut board = Board::startpos();
-        let s    = Searcher::new(Tt::new(4));
-        let info = s.search(&mut board, SearchConfig { max_depth: 4, time_limit: None });
+        let s = Searcher::new(Tt::new(4));
+        let info = s.search(
+            &mut board,
+            SearchConfig {
+                max_depth: 4,
+                time_limit: None,
+            },
+        );
         assert!(info.best_move.is_some(), "search returned no move");
         assert_eq!(info.depth, 4);
         assert_eq!(board.hash(), Board::startpos().hash(), "board mutated");
@@ -266,14 +312,17 @@ mod tests {
         use tt::Tt;
 
         let mut board = Board::startpos();
-        let cfg = || SearchConfig { max_depth: 4, time_limit: None };
+        let cfg = || SearchConfig {
+            max_depth: 4,
+            time_limit: None,
+        };
 
         // First search (parallel, rayon uses all cores)
         let r1 = Searcher::new(Tt::new(4)).search(&mut board, cfg());
         // Second search on a fresh TT — same result expected
         let r2 = Searcher::new(Tt::new(4)).search(&mut board, cfg());
 
-        assert_eq!(r1.score,     r2.score,     "scores differ");
+        assert_eq!(r1.score, r2.score, "scores differ");
         assert_eq!(r1.best_move, r2.best_move, "best moves differ");
     }
 
@@ -282,15 +331,23 @@ mod tests {
     fn tt_reduces_nodes() {
         use search::{SearchConfig, Searcher};
         use tt::Tt;
-        let tt         = Tt::new(16);
-        let mut board  = Board::startpos();
-        let cfg = || SearchConfig { max_depth: 4, time_limit: None };
+        let tt = Tt::new(16);
+        let mut board = Board::startpos();
+        let cfg = || SearchConfig {
+            max_depth: 4,
+            time_limit: None,
+        };
 
         let r1 = Searcher::new(tt.clone()).search(&mut board, cfg());
         let r2 = Searcher::new(tt.clone()).search(&mut board, cfg());
 
         assert_eq!(r1.best_move, r2.best_move, "TT changed best move");
-        assert!(r2.nodes <= r1.nodes, "TT did not reduce nodes ({} -> {})", r1.nodes, r2.nodes);
+        assert!(
+            r2.nodes <= r1.nodes,
+            "TT did not reduce nodes ({} -> {})",
+            r1.nodes,
+            r2.nodes
+        );
     }
 
     /// SpeculativeSearcher must return a valid move, leave the board unchanged,
@@ -306,22 +363,35 @@ mod tests {
         use search::{SearchConfig, Searcher, SpeculativeSearcher};
         use tt::Tt;
 
-        let mut board  = Board::startpos();
-        let depth      = 4;
+        let mut board = Board::startpos();
+        let depth = 4;
 
-        let regular = Searcher::new(Tt::new(16))
-            .search(&mut board, SearchConfig { max_depth: depth, time_limit: None });
+        let regular = Searcher::new(Tt::new(16)).search(
+            &mut board,
+            SearchConfig {
+                max_depth: depth,
+                time_limit: None,
+            },
+        );
 
-        let spec = SpeculativeSearcher::new(Tt::new(16), 3)
-            .search(&mut board, SearchConfig { max_depth: depth, time_limit: None });
+        let spec = SpeculativeSearcher::new(Tt::new(16), 3).search(
+            &mut board,
+            SearchConfig {
+                max_depth: depth,
+                time_limit: None,
+            },
+        );
 
         // Must return a move and not corrupt the board
         assert!(spec.best_move.is_some(), "spec search returned no move");
         assert_eq!(board.hash(), Board::startpos().hash(), "board mutated");
-        assert_eq!(spec.depth, depth as u32, "did not complete target depth");
+        assert_eq!(spec.depth, depth, "did not complete target depth");
 
         // Score must be a plausible material evaluation (not a spurious mate score)
-        assert!(spec.score.abs() < 900_000, "spec returned a nonsensical score");
+        assert!(
+            spec.score.abs() < 900_000,
+            "spec returned a nonsensical score"
+        );
 
         // Both searches must agree that SOME move exists
         assert!(regular.best_move.is_some());
@@ -335,8 +405,7 @@ mod tests {
         );
         eprintln!(
             "spec:    score={} move={:?}  hits={}/{} hashfull={}‰ nodes={}",
-            spec.score, spec.best_move,
-            spec.spec_hits, spec.spec_total, spec.hashfull, spec.nodes
+            spec.score, spec.best_move, spec.spec_hits, spec.spec_total, spec.hashfull, spec.nodes
         );
     }
 
@@ -348,8 +417,8 @@ mod tests {
     #[ignore = "slow: run with --release (~2 min)"]
     fn random_perft_mated_10m() {
         use movegen::{generate_legal_moves, is_in_check};
-        use perft::perft;
         use mv::MoveToken;
+        use perft::perft;
 
         let mut board = Board::startpos();
         let mut validations: u64 = 0;
@@ -397,7 +466,8 @@ mod tests {
                 let tok = board.do_move(m);
                 board.undo_move(tok);
                 assert_eq!(
-                    board.hash(), h0,
+                    board.hash(),
+                    h0,
                     "undo did not restore hash at validation {validations} move {m:?}"
                 );
             }
@@ -425,7 +495,9 @@ mod tests {
     fn hash_transposition() {
         let mut board = Board::startpos();
         let moves = generate_legal_moves(&mut board);
-        if moves.len() < 2 { return; }
+        if moves.len() < 2 {
+            return;
+        }
 
         let m1 = moves[0];
         let m2 = moves[1];

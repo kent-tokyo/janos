@@ -1,4 +1,6 @@
 //! NNUE-style efficiently-updatable evaluator.
+// Index-based loops are intentional for SIMD-friendly access patterns (LLVM VPADDW/VPSUBW).
+#![allow(clippy::needless_range_loop)]
 //!
 //! # Feature set
 //! PS + hand features:
@@ -50,24 +52,29 @@ pub const BOARD_INPUT: usize = 81 * 14 * 2; // 2 268  (piece-square × own/opp)
 // Max counts: Fu:18, Kyou:4, Kei:4, Gin:4, Kin:4, Kaku:2, Hisha:2 → 38 total.
 // Grouped as: 38 thresholds × (2 hand-colors × 2 perspectives) = 152 features.
 pub const HAND_THRESHOLDS: usize = 38;
-pub const HAND_INPUT:      usize = HAND_THRESHOLDS * 4;  // 152
-pub const INPUT:           usize = BOARD_INPUT + HAND_INPUT; // 2 420
+pub const HAND_INPUT: usize = HAND_THRESHOLDS * 4; // 152
+pub const INPUT: usize = BOARD_INPUT + HAND_INPUT; // 2 420
 
 pub const L1: usize = 256; // feature-transformer neurons per perspective
-pub const L2: usize = 32;  // hidden layer neurons
+pub const L2: usize = 32; // hidden layer neurons
 
 // Cumulative threshold offsets for each hand kind (Fu=0..Hisha=6):
 // Fu:18 → [0], Kyou:4 → [18], Kei:4 → [22], Gin:4 → [26], Kin:4 → [30], Kaku:2 → [34], Hisha:2 → [36]
 pub const HAND_OFFSETS: [usize; 7] = [0, 18, 22, 26, 30, 34, 36];
-pub const HAND_MAX:     [u8;    7] = [18,  4,  4,  4,  4,  2,  2];
+pub const HAND_MAX: [u8; 7] = [18, 4, 4, 4, 4, 2, 2];
 
 /// Feature index for "hand_color has ≥ count of kind K from perspective's view".
 /// kind must be a base hand piece (Fu..Hisha, index 0..6); count is 1-indexed.
 #[inline]
-pub fn hand_feature_index(kind: PieceKind, count: u8, hand_color: Color, perspective: Color) -> usize {
-    let ki    = kind.index(); // Fu=0..Hisha=6
+pub fn hand_feature_index(
+    kind: PieceKind,
+    count: u8,
+    hand_color: Color,
+    perspective: Color,
+) -> usize {
+    let ki = kind.index(); // Fu=0..Hisha=6
     let thres = HAND_OFFSETS[ki] + (count - 1) as usize;
-    let cp    = hand_color.index() * 2 + perspective.index();
+    let cp = hand_color.index() * 2 + perspective.index();
     BOARD_INPUT + cp * HAND_THRESHOLDS + thres
 }
 
@@ -83,11 +90,11 @@ const fn lcg(s: u64) -> u64 {
 // ============================================================
 
 pub struct NnueWeights {
-    pub ft:       Vec<[i16; L1]>,  // INPUT entries — quantised i16
-    pub ft_bias:  [i16; L1],
-    pub l2:       Vec<[f32; L2]>,  // 2*L1 entries — f32 (us-perspective first, then them)
-    pub l2_bias:  [f32; L2],
-    pub out:      [f32; L2],
+    pub ft: Vec<[i16; L1]>, // INPUT entries — quantised i16
+    pub ft_bias: [i16; L1],
+    pub l2: Vec<[f32; L2]>, // 2*L1 entries — f32 (us-perspective first, then them)
+    pub l2_bias: [f32; L2],
+    pub out: [f32; L2],
     pub out_bias: f32,
 }
 
@@ -127,7 +134,14 @@ impl NnueWeights {
             *w = ((s4 >> 48) as f32 / 65536.0 - 0.5) * 0.02;
         }
 
-        NnueWeights { ft, ft_bias, l2, l2_bias: [0.0; L2], out, out_bias: 0.0 }
+        NnueWeights {
+            ft,
+            ft_bias,
+            l2,
+            l2_bias: [0.0; L2],
+            out,
+            out_bias: 0.0,
+        }
     }
 }
 
@@ -135,8 +149,8 @@ impl NnueWeights {
 // Global weight store
 // ============================================================
 
-static WEIGHTS:     OnceLock<NnueWeights> = OnceLock::new();
-static NNUE_ACTIVE: AtomicBool            = AtomicBool::new(false);
+static WEIGHTS: OnceLock<NnueWeights> = OnceLock::new();
+static NNUE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Return the active weight set. Initialises with LCG defaults on first call.
 #[inline]
@@ -153,22 +167,32 @@ pub fn weights_active() -> bool {
 /// Load weights from a JANOSW03 binary file and activate NNUE evaluation.
 pub fn load_weights(path: &Path) -> io::Result<()> {
     const MAGIC: &[u8] = b"JANOSW03";
-    let ft_bytes   = INPUT * L1 * 2;
+    let ft_bytes = INPUT * L1 * 2;
     let bias_bytes = L1 * 2;
-    let l2_bytes   = 2 * L1 * L2 * 4;
-    let l2b_bytes  = L2 * 4;
-    let out_bytes  = L2 * 4;
-    let expected   = 8 + ft_bytes + bias_bytes + l2_bytes + l2b_bytes + out_bytes + 4;
+    let l2_bytes = 2 * L1 * L2 * 4;
+    let l2b_bytes = L2 * 4;
+    let out_bytes = L2 * 4;
+    let expected = 8 + ft_bytes + bias_bytes + l2_bytes + l2b_bytes + out_bytes + 4;
 
     let data = std::fs::read(path)?;
 
     if data.len() < expected {
-        return Err(Error::new(ErrorKind::InvalidData,
-            format!("expected {expected} bytes, got {} (wrong format?)", data.len())));
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "expected {expected} bytes, got {} (wrong format?)",
+                data.len()
+            ),
+        ));
     }
     if &data[..8] != MAGIC {
-        return Err(Error::new(ErrorKind::InvalidData,
-            format!("bad magic — expected JANOSW03, got {:?}. Old JANOSW02 weights need retraining.", &data[..8])));
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "bad magic — expected JANOSW03, got {:?}. Old JANOSW02 weights need retraining.",
+                &data[..8]
+            ),
+        ));
     }
 
     let mut off = 8usize;
@@ -190,26 +214,33 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
     let mut l2 = vec![[0.0f32; L2]; 2 * L1];
     for row in l2.iter_mut() {
         for w in row.iter_mut() {
-            *w = f32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]);
+            *w = f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
             off += 4;
         }
     }
 
     let mut l2_bias = [0.0f32; L2];
     for b in l2_bias.iter_mut() {
-        *b = f32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]);
+        *b = f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
         off += 4;
     }
 
     let mut out = [0.0f32; L2];
     for w in out.iter_mut() {
-        *w = f32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]);
+        *w = f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
         off += 4;
     }
 
-    let out_bias = f32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]);
+    let out_bias = f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
 
-    let w = NnueWeights { ft, ft_bias, l2, l2_bias, out, out_bias };
+    let w = NnueWeights {
+        ft,
+        ft_bias,
+        l2,
+        l2_bias,
+        out,
+        out_bias,
+    };
     let _ = WEIGHTS.set(w);
     NNUE_ACTIVE.store(true, Ordering::Relaxed);
 
@@ -218,25 +249,29 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
 
 /// Serialise weights to a binary file in JANOSW02 format.
 pub fn save_weights(w: &NnueWeights, path: &Path) -> io::Result<()> {
-    let capacity = 8
-        + INPUT * L1 * 2
-        + L1 * 2
-        + 2 * L1 * L2 * 4
-        + L2 * 4
-        + L2 * 4
-        + 4;
+    let capacity = 8 + INPUT * L1 * 2 + L1 * 2 + 2 * L1 * L2 * 4 + L2 * 4 + L2 * 4 + 4;
     let mut data = Vec::with_capacity(capacity);
 
     data.extend_from_slice(b"JANOSW03");
     for row in &w.ft {
-        for &v in row { data.extend_from_slice(&v.to_le_bytes()); }
+        for &v in row {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
     }
-    for &v in &w.ft_bias { data.extend_from_slice(&v.to_le_bytes()); }
+    for &v in &w.ft_bias {
+        data.extend_from_slice(&v.to_le_bytes());
+    }
     for row in &w.l2 {
-        for &v in row { data.extend_from_slice(&v.to_le_bytes()); }
+        for &v in row {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
     }
-    for &v in &w.l2_bias { data.extend_from_slice(&v.to_le_bytes()); }
-    for &v in &w.out     { data.extend_from_slice(&v.to_le_bytes()); }
+    for &v in &w.l2_bias {
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    for &v in &w.out {
+        data.extend_from_slice(&v.to_le_bytes());
+    }
     data.extend_from_slice(&w.out_bias.to_le_bytes());
 
     std::fs::write(path, &data)
@@ -262,7 +297,9 @@ pub struct NnueAcc {
 impl NnueAcc {
     /// Initialize from the bias vector (empty board baseline).
     pub fn new() -> Self {
-        NnueAcc { values: [weights().ft_bias; 2] }
+        NnueAcc {
+            values: [weights().ft_bias; 2],
+        }
     }
 
     /// Full recompute from a board mailbox + hand counts.
@@ -294,7 +331,9 @@ impl NnueAcc {
 
     /// Call when `color`'s hand gains its `count`-th piece of `kind` (count ≥ 1).
     pub fn add_hand(&mut self, kind: PieceKind, count: u8, color: Color) {
-        if count == 0 || count > HAND_MAX[kind.index()] { return; }
+        if count == 0 || count > HAND_MAX[kind.index()] {
+            return;
+        }
         for p in [Color::Black, Color::White] {
             self.add_col(p.index(), hand_feature_index(kind, count, color, p));
         }
@@ -302,7 +341,9 @@ impl NnueAcc {
 
     /// Call when `color`'s hand loses its `count`-th piece of `kind` (count was ≥ 1 before the drop).
     pub fn remove_hand(&mut self, kind: PieceKind, count: u8, color: Color) {
-        if count == 0 || count > HAND_MAX[kind.index()] { return; }
+        if count == 0 || count > HAND_MAX[kind.index()] {
+            return;
+        }
         for p in [Color::Black, Color::White] {
             self.sub_col(p.index(), hand_feature_index(kind, count, color, p));
         }
@@ -329,27 +370,27 @@ impl NnueAcc {
     /// Evaluate the position; positive = good for `stm`.
     /// FT ClippedReLU → L2 (f32) → ClippedReLU → output → centipawn score.
     pub fn evaluate(&self, stm: Color) -> i32 {
-        let w    = weights();
-        let us   = stm.index();
+        let w = weights();
+        let us = stm.index();
         let them = 1 - us;
 
         // Dequantize FT accumulators to f32
-        let mut relu_us   = [0.0f32; L1];
+        let mut relu_us = [0.0f32; L1];
         let mut relu_them = [0.0f32; L1];
         for j in 0..L1 {
-            relu_us  [j] = self.values[us  ][j].clamp(0, 127) as f32;
+            relu_us[j] = self.values[us][j].clamp(0, 127) as f32;
             relu_them[j] = self.values[them][j].clamp(0, 127) as f32;
         }
 
         // L2 forward (input-first loop for cache-friendly access to l2[j])
         let mut l2_acc = w.l2_bias;
         for j in 0..L1 {
-            let a = relu_us  [j];
+            let a = relu_us[j];
             let b = relu_them[j];
-            let row_us   = &w.l2[j];
+            let row_us = &w.l2[j];
             let row_them = &w.l2[L1 + j];
             for o in 0..L2 {
-                l2_acc[o] += a * row_us  [o];
+                l2_acc[o] += a * row_us[o];
                 l2_acc[o] += b * row_them[o];
             }
         }
@@ -387,5 +428,7 @@ impl NnueAcc {
 }
 
 impl Default for NnueAcc {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

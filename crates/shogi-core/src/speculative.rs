@@ -8,8 +8,8 @@
 //! abort flag has been set. This prevents partially-computed 0-scores from
 //! poisoning entries that the main search later reads.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crate::board::Board;
 use crate::movegen::generate_legal_moves;
@@ -23,7 +23,7 @@ const RUNNING: i32 = i32::MAX;
 // ---- Shared context for speculative tasks ----
 
 pub struct SpecState {
-    pub tt:    Arc<Tt>,
+    pub tt: Arc<Tt>,
     /// Set when the whole search session ends; tasks must check this too.
     pub abort: Arc<AtomicBool>,
 }
@@ -31,9 +31,9 @@ pub struct SpecState {
 // ---- Per-task handle ----
 
 struct SpecTask {
-    mv:         Move,
+    mv: Move,
     task_abort: Arc<AtomicBool>,
-    result:     Arc<AtomicI32>, // RUNNING while in-flight; real score when done
+    result: Arc<AtomicI32>, // RUNNING while in-flight; real score when done
 }
 
 // ---- RAII group ----
@@ -55,23 +55,21 @@ impl SpecGroup {
             .into_iter()
             .map(|m| {
                 let task_abort = Arc::new(AtomicBool::new(false));
-                let result     = Arc::new(AtomicI32::new(RUNNING));
+                let result = Arc::new(AtomicI32::new(RUNNING));
 
-                let abort_c  = task_abort.clone();
+                let abort_c = task_abort.clone();
                 let result_c = result.clone();
-                let state_c  = state.clone();
-                let mut b    = board.clone();
+                let state_c = state.clone();
+                let mut b = board.clone();
 
                 rayon::spawn(move || {
                     // Check abort flags before doing any work
-                    if abort_c.load(Ordering::Relaxed)
-                        || state_c.abort.load(Ordering::Relaxed)
-                    {
+                    if abort_c.load(Ordering::Relaxed) || state_c.abort.load(Ordering::Relaxed) {
                         result_c.store(0, Ordering::Relaxed);
                         return;
                     }
 
-                    let tok   = b.do_move(m);
+                    let tok = b.do_move(m);
                     let score = spec_alpha_beta(
                         &state_c,
                         &abort_c,
@@ -86,16 +84,14 @@ impl SpecGroup {
                     // Only write to TT if the search completed without abort.
                     // An aborted search may have propagated score=0 up the tree,
                     // which would poison TT entries read by the main search.
-                    if !abort_c.load(Ordering::Relaxed)
-                        && !state_c.abort.load(Ordering::Relaxed)
-                    {
+                    if !abort_c.load(Ordering::Relaxed) && !state_c.abort.load(Ordering::Relaxed) {
                         state_c.tt.store(
                             b.hash(),
                             TtEntry {
                                 score: -score, // negate: score is opponent's, -score is ours
                                 depth: depth as u8,
                                 bound: Bound::Exact,
-                                mv:    Some(m),
+                                mv: Some(m),
                             },
                         );
                         result_c.store(-score, Ordering::Release);
@@ -104,7 +100,11 @@ impl SpecGroup {
                     }
                 });
 
-                SpecTask { mv: m, task_abort, result }
+                SpecTask {
+                    mv: m,
+                    task_abort,
+                    result,
+                }
             })
             .collect();
 
@@ -121,7 +121,9 @@ impl SpecGroup {
         for t in &self.tasks {
             if t.mv == mv {
                 let v = t.result.load(Ordering::Acquire);
-                if v != RUNNING { return Some(v); }
+                if v != RUNNING {
+                    return Some(v);
+                }
                 return None;
             }
         }
@@ -144,13 +146,13 @@ impl Drop for SpecGroup {
 // search for rayon worker threads.
 
 fn spec_alpha_beta(
-    state:      &Arc<SpecState>,
+    state: &Arc<SpecState>,
     task_abort: &AtomicBool,
-    board:      &mut Board,
-    alpha:      i32,
-    beta:       i32,
-    depth:      u32,
-    ply:        u32,
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+    depth: u32,
+    ply: u32,
 ) -> i32 {
     // Abort check first — callers must not use the return value 0 as a real score
     if task_abort.load(Ordering::Relaxed) || state.abort.load(Ordering::Relaxed) {
@@ -161,22 +163,28 @@ fn spec_alpha_beta(
         return crate::eval::evaluate(board);
     }
 
-    let hash       = board.hash();
+    let hash = board.hash();
     let orig_alpha = alpha;
-    let mut alpha  = alpha;
+    let mut alpha = alpha;
 
     // TT probe — skip if entry was written by an aborted task (we can't tell,
     // but entries with depth=0 or unreasonable scores are naturally harmless)
-    if let Some(e) = state.tt.probe(hash) {
-        if e.depth >= depth as u8 {
-            match e.bound {
-                Bound::Exact => return e.score,
-                Bound::Lower => {
-                    if e.score >= beta  { return e.score; }
-                    if e.score >  alpha { alpha = e.score; }
+    if let Some(e) = state.tt.probe(hash)
+        && e.depth >= depth as u8
+    {
+        match e.bound {
+            Bound::Exact => return e.score,
+            Bound::Lower => {
+                if e.score >= beta {
+                    return e.score;
                 }
-                Bound::Upper => {
-                    if e.score <= alpha { return e.score; }
+                if e.score > alpha {
+                    alpha = e.score;
+                }
+            }
+            Bound::Upper => {
+                if e.score <= alpha {
+                    return e.score;
                 }
             }
         }
@@ -187,7 +195,7 @@ fn spec_alpha_beta(
         return -(crate::search::MATE_SCORE - ply as i32);
     }
 
-    let mut best      = -1_000_000i32;
+    let mut best = -1_000_000i32;
     let mut best_move = None;
 
     for m in moves {
@@ -196,8 +204,8 @@ fn spec_alpha_beta(
             return 0; // do NOT write to TT with this incomplete best
         }
 
-        let tok   = board.do_move(m);
-        let s     = -spec_alpha_beta(state, task_abort, board, -beta, -alpha, depth - 1, ply + 1);
+        let tok = board.do_move(m);
+        let s = -spec_alpha_beta(state, task_abort, board, -beta, -alpha, depth - 1, ply + 1);
         board.undo_move(tok);
 
         // If the recursive call aborted, s == 0 is meaningless — bail out
@@ -205,15 +213,40 @@ fn spec_alpha_beta(
             return 0;
         }
 
-        if s > best { best = s; best_move = Some(m); }
+        if s > best {
+            best = s;
+            best_move = Some(m);
+        }
         if s >= beta {
-            state.tt.store(hash, TtEntry { score: s, depth: depth as u8, bound: Bound::Lower, mv: best_move });
+            state.tt.store(
+                hash,
+                TtEntry {
+                    score: s,
+                    depth: depth as u8,
+                    bound: Bound::Lower,
+                    mv: best_move,
+                },
+            );
             return s;
         }
-        if s > alpha { alpha = s; }
+        if s > alpha {
+            alpha = s;
+        }
     }
 
-    let bound = if best > orig_alpha { Bound::Exact } else { Bound::Upper };
-    state.tt.store(hash, TtEntry { score: best, depth: depth as u8, bound, mv: best_move });
+    let bound = if best > orig_alpha {
+        Bound::Exact
+    } else {
+        Bound::Upper
+    };
+    state.tt.store(
+        hash,
+        TtEntry {
+            score: best,
+            depth: depth as u8,
+            bound,
+            mv: best_move,
+        },
+    );
     best
 }

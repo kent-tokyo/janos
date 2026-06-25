@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)] // mailbox/snapshot init loops are clearer with explicit indices
 use crate::bitboard::Bitboard;
 use crate::color::Color;
 use crate::hand::Hand;
@@ -11,8 +12,13 @@ use crate::zobrist;
 /// hand_counts[color_idx][kind_idx] = count (kind_idx: Fu=0..Hisha=6)
 fn hand_counts_array(hand: &[Hand; 2]) -> [[u8; 7]; 2] {
     let hand_kinds = [
-        PieceKind::Fu, PieceKind::Kyou, PieceKind::Kei, PieceKind::Gin,
-        PieceKind::Kin, PieceKind::Kaku, PieceKind::Hisha,
+        PieceKind::Fu,
+        PieceKind::Kyou,
+        PieceKind::Kei,
+        PieceKind::Gin,
+        PieceKind::Kin,
+        PieceKind::Kaku,
+        PieceKind::Hisha,
     ];
     let mut out = [[0u8; 7]; 2];
     for ci in 0..2 {
@@ -34,7 +40,7 @@ fn sfen_char_to_base_kind(c: char) -> Option<PieceKind> {
         'b' => Some(PieceKind::Kaku),
         'r' => Some(PieceKind::Hisha),
         'k' => Some(PieceKind::Ou),
-        _   => None,
+        _ => None,
     }
 }
 
@@ -42,30 +48,30 @@ fn sfen_char_to_base_kind(c: char) -> Option<PieceKind> {
 #[derive(Clone)]
 pub struct Board {
     /// `piece_bb[color][kind]` = bitboard of that piece type for that color
-    piece_bb:         [[Bitboard; PieceKind::COUNT]; 2],
+    piece_bb: [[Bitboard; PieceKind::COUNT]; 2],
     /// `occ[color]` = occupancy bitboard for all pieces of that color
-    occ:              [Bitboard; 2],
+    occ: [Bitboard; 2],
     /// Mailbox for O(1) piece lookup by square
-    mailbox:          [Option<Piece>; Square::NUM],
-    hand:             [Hand; 2],
+    mailbox: [Option<Piece>; Square::NUM],
+    hand: [Hand; 2],
     pub side_to_move: Color,
-    pub ply:          u32,
-    hash:             u64,
+    pub ply: u32,
+    hash: u64,
     /// NNUE accumulator — kept in sync with the board position via inverse deltas
-    pub acc:          NnueAcc,
+    pub acc: NnueAcc,
 }
 
 impl Board {
     pub(crate) fn empty() -> Self {
         Board {
-            piece_bb:     [[Bitboard::EMPTY; PieceKind::COUNT]; 2],
-            occ:          [Bitboard::EMPTY; 2],
-            mailbox:      [None; Square::NUM],
-            hand:         [Hand::new(); 2],
+            piece_bb: [[Bitboard::EMPTY; PieceKind::COUNT]; 2],
+            occ: [Bitboard::EMPTY; 2],
+            mailbox: [None; Square::NUM],
+            hand: [Hand::new(); 2],
             side_to_move: Color::Black,
-            ply:          0,
-            hash:         0,
-            acc:          NnueAcc::new(),
+            ply: 0,
+            hash: 0,
+            acc: NnueAcc::new(),
         }
     }
 
@@ -161,7 +167,6 @@ impl Board {
 
     /// Parse a SFEN position string into a Board.
     pub fn from_sfen(sfen: &str) -> Result<Self, String> {
-
         let parts: Vec<&str> = sfen.split_whitespace().collect();
         if parts.len() < 3 {
             return Err(format!("SFEN needs at least 3 fields, got: '{sfen}'"));
@@ -177,30 +182,42 @@ impl Board {
 
         for (rank_idx, rank_str) in ranks.iter().enumerate() {
             let rank = (rank_idx + 1) as u8; // 1-9
-            let mut file = 9u8;              // starts at file 9, steps down to 1
+            let mut file = 9u8; // starts at file 9, steps down to 1
             let mut chars = rank_str.chars().peekable();
 
             while let Some(c) = chars.next() {
                 if c == '+' {
                     // Next character is the promoted piece
-                    let next = chars.next()
+                    let next = chars
+                        .next()
                         .ok_or_else(|| format!("SFEN: '+' at end of rank {rank}"))?;
-                    let color = if next.is_uppercase() { Color::Black } else { Color::White };
-                    let base  = sfen_char_to_base_kind(next)
+                    let color = if next.is_uppercase() {
+                        Color::Black
+                    } else {
+                        Color::White
+                    };
+                    let base = sfen_char_to_base_kind(next)
                         .ok_or_else(|| format!("SFEN: unknown piece '{next}'"))?;
-                    let kind  = base.promoted();
+                    let kind = base.promoted();
                     board.setup_piece(Square::from_shogi(file, rank), Piece::new(color, kind));
-                    file = file.checked_sub(1)
+                    file = file
+                        .checked_sub(1)
                         .ok_or_else(|| format!("SFEN: too many pieces in rank {rank}"))?;
                 } else if let Some(n) = c.to_digit(10) {
-                    file = file.checked_sub(n as u8)
+                    file = file
+                        .checked_sub(n as u8)
                         .ok_or_else(|| format!("SFEN: digit overflow in rank {rank}"))?;
                 } else {
-                    let color = if c.is_uppercase() { Color::Black } else { Color::White };
-                    let kind  = sfen_char_to_base_kind(c)
+                    let color = if c.is_uppercase() {
+                        Color::Black
+                    } else {
+                        Color::White
+                    };
+                    let kind = sfen_char_to_base_kind(c)
                         .ok_or_else(|| format!("SFEN: unknown piece '{c}'"))?;
                     board.setup_piece(Square::from_shogi(file, rank), Piece::new(color, kind));
-                    file = file.checked_sub(1)
+                    file = file
+                        .checked_sub(1)
                         .ok_or_else(|| format!("SFEN: too many pieces in rank {rank}"))?;
                 }
             }
@@ -210,7 +227,7 @@ impl Board {
         board.side_to_move = match parts[1] {
             "b" => Color::Black,
             "w" => Color::White,
-            s   => return Err(format!("SFEN: unknown side '{s}'")),
+            s => return Err(format!("SFEN: unknown side '{s}'")),
         };
 
         // --- Hand ---
@@ -220,8 +237,12 @@ impl Board {
                 if let Some(n) = c.to_digit(10) {
                     count = count * 10 + n as u8;
                 } else {
-                    let color = if c.is_uppercase() { Color::Black } else { Color::White };
-                    let kind  = sfen_char_to_base_kind(c)
+                    let color = if c.is_uppercase() {
+                        Color::Black
+                    } else {
+                        Color::White
+                    };
+                    let kind = sfen_char_to_base_kind(c)
                         .ok_or_else(|| format!("SFEN: unknown hand piece '{c}'"))?;
                     if kind == PieceKind::Ou {
                         return Err("SFEN: king cannot be in hand".into());
@@ -236,10 +257,10 @@ impl Board {
         }
 
         // --- Ply (optional 4th field) ---
-        if let Some(ply_str) = parts.get(3) {
-            if let Ok(ply) = ply_str.parse::<u32>() {
-                board.ply = ply.saturating_sub(1); // USI counts from 1
-            }
+        if let Some(ply_str) = parts.get(3)
+            && let Ok(ply) = ply_str.parse::<u32>()
+        {
+            board.ply = ply.saturating_sub(1); // USI counts from 1
         }
 
         // Recompute derived state (hash + NNUE accumulator) from scratch
@@ -313,7 +334,8 @@ impl Board {
         for i in 0..Square::NUM {
             if let Some(p) = b.mailbox[i] {
                 h ^= zobrist::piece_key(Square::from_index(i as u8), p.color, p.kind);
-                b.acc.add_piece(Square::from_index(i as u8), p.kind, p.color);
+                b.acc
+                    .add_piece(Square::from_index(i as u8), p.kind, p.color);
             }
         }
         h ^= zobrist::side_key(); // Black to move
@@ -327,7 +349,7 @@ impl Board {
     /// Apply `m` and return a token needed to undo it.
     /// Updates Zobrist hash and NNUE accumulator incrementally.
     pub fn do_move(&mut self, m: Move) -> MoveToken {
-        let color     = self.side_to_move;
+        let color = self.side_to_move;
         let prev_hash = self.hash;
 
         self.hash ^= zobrist::side_key();
@@ -335,7 +357,7 @@ impl Board {
         let token = match m.from {
             None => {
                 // Drop: remove from hand, place on board
-                let piece     = Piece::new(color, m.piece_kind);
+                let piece = Piece::new(color, m.piece_kind);
                 let old_count = self.hand[color.index()].get(m.piece_kind);
 
                 self.hash ^= zobrist::hand_delta(color, m.piece_kind, old_count);
@@ -350,15 +372,18 @@ impl Board {
                 self.acc.add_piece(m.to, m.piece_kind, color);
 
                 MoveToken {
-                    from: None, to: m.to,
-                    moved: piece, captured: None, promoted: false,
+                    from: None,
+                    to: m.to,
+                    moved: piece,
+                    captured: None,
+                    promoted: false,
                     prev_hash,
                 }
             }
             Some(from) => {
                 let mut moved = self.take(from).expect("no piece at from");
                 debug_assert_eq!(moved.color, color);
-                debug_assert_eq!(moved.kind,  m.piece_kind);
+                debug_assert_eq!(moved.kind, m.piece_kind);
                 self.hash ^= zobrist::piece_key(from, color, moved.kind);
 
                 // NNUE: remove piece from its old square
@@ -367,7 +392,7 @@ impl Board {
                 let captured = self.take(m.to);
                 if let Some(cap) = captured {
                     self.hash ^= zobrist::piece_key(m.to, cap.color, cap.kind);
-                    let base      = cap.kind.unpromoted();
+                    let base = cap.kind.unpromoted();
                     let new_count = self.hand[color.index()].get(base) + 1;
                     self.hash ^= zobrist::hand_delta(color, base, new_count);
                     self.hand[color.index()].add_captured(cap.kind);
@@ -388,9 +413,11 @@ impl Board {
                 self.acc.add_piece(m.to, moved.kind, color);
 
                 MoveToken {
-                    from: Some(from), to: m.to,
+                    from: Some(from),
+                    to: m.to,
                     moved: Piece::new(color, pre_kind),
-                    captured, promoted: m.promote,
+                    captured,
+                    promoted: m.promote,
                     prev_hash,
                 }
             }
@@ -404,10 +431,10 @@ impl Board {
     /// Restore position to before `do_move` using inverse NNUE deltas.
     /// No accumulator stack needed — the deltas are symmetric.
     pub fn undo_move(&mut self, token: MoveToken) {
-        self.hash         = token.prev_hash;
+        self.hash = token.prev_hash;
         self.side_to_move = self.side_to_move.flip();
-        self.ply         -= 1;
-        let color         = self.side_to_move;
+        self.ply -= 1;
+        let color = self.side_to_move;
 
         match token.from {
             None => {
@@ -445,7 +472,8 @@ impl Board {
 
                     // NNUE inverse: captured piece reappears on board; threshold feature for before_remove turns off
                     self.acc.add_piece(token.to, cap.kind, cap.color);
-                    self.acc.remove_hand(cap.kind.unpromoted(), before_remove, color);
+                    self.acc
+                        .remove_hand(cap.kind.unpromoted(), before_remove, color);
                 }
             }
         }
@@ -465,7 +493,7 @@ impl Board {
 
     /// Undo a null move, restoring side_to_move and hash.
     pub fn undo_null_move(&mut self, tok: NullToken) {
-        self.hash         = tok.prev_hash;
+        self.hash = tok.prev_hash;
         self.side_to_move = self.side_to_move.flip();
     }
 }

@@ -35,23 +35,55 @@ pub fn is_attacked(board: &Board, sq: Square, by: Color) -> bool {
     // Silver, Gold: step attacks in the color-appropriate directions (reversed)
     match by {
         Color::Black => {
-            if step_hits(Direction::S, PieceKind::Fu) { return true; }
-            if slide_hits(Direction::S, &[PieceKind::Kyou]) { return true; }
-            if step_hits(Direction::KnightS1, PieceKind::Kei) { return true; }
-            if step_hits(Direction::KnightS2, PieceKind::Kei) { return true; }
+            if step_hits(Direction::S, PieceKind::Fu) {
+                return true;
+            }
+            if slide_hits(Direction::S, &[PieceKind::Kyou]) {
+                return true;
+            }
+            if step_hits(Direction::KnightS1, PieceKind::Kei) {
+                return true;
+            }
+            if step_hits(Direction::KnightS2, PieceKind::Kei) {
+                return true;
+            }
             // Black silver attacks N, NE, NW, SE, SW → reverse: S, SW, SE, NW, NE
-            for dir in [Direction::S, Direction::SW, Direction::SE, Direction::NW, Direction::NE] {
-                if step_hits(dir, PieceKind::Gin) { return true; }
+            for dir in [
+                Direction::S,
+                Direction::SW,
+                Direction::SE,
+                Direction::NW,
+                Direction::NE,
+            ] {
+                if step_hits(dir, PieceKind::Gin) {
+                    return true;
+                }
             }
         }
         Color::White => {
-            if step_hits(Direction::N, PieceKind::Fu) { return true; }
-            if slide_hits(Direction::N, &[PieceKind::Kyou]) { return true; }
-            if step_hits(Direction::KnightN1, PieceKind::Kei) { return true; }
-            if step_hits(Direction::KnightN2, PieceKind::Kei) { return true; }
+            if step_hits(Direction::N, PieceKind::Fu) {
+                return true;
+            }
+            if slide_hits(Direction::N, &[PieceKind::Kyou]) {
+                return true;
+            }
+            if step_hits(Direction::KnightN1, PieceKind::Kei) {
+                return true;
+            }
+            if step_hits(Direction::KnightN2, PieceKind::Kei) {
+                return true;
+            }
             // White silver attacks S, SE, SW, NE, NW → reverse: N, NW, NE, SW, SE
-            for dir in [Direction::N, Direction::NW, Direction::NE, Direction::SW, Direction::SE] {
-                if step_hits(dir, PieceKind::Gin) { return true; }
+            for dir in [
+                Direction::N,
+                Direction::NW,
+                Direction::NE,
+                Direction::SW,
+                Direction::SE,
+            ] {
+                if step_hits(dir, PieceKind::Gin) {
+                    return true;
+                }
             }
         }
     }
@@ -60,8 +92,22 @@ pub fn is_attacked(board: &Board, sq: Square, by: Color) -> bool {
     // Black gold attacks N, NE, NW, E, W, S → reverse: S, SW, SE, W, E, N
     // White gold attacks S, SE, SW, E, W, N → reverse: N, NW, NE, W, E, S
     let gold_dirs: &[Direction] = match by {
-        Color::Black => &[Direction::S, Direction::SW, Direction::SE, Direction::W, Direction::E, Direction::N],
-        Color::White => &[Direction::N, Direction::NW, Direction::NE, Direction::W, Direction::E, Direction::S],
+        Color::Black => &[
+            Direction::S,
+            Direction::SW,
+            Direction::SE,
+            Direction::W,
+            Direction::E,
+            Direction::N,
+        ],
+        Color::White => &[
+            Direction::N,
+            Direction::NW,
+            Direction::NE,
+            Direction::W,
+            Direction::E,
+            Direction::S,
+        ],
     };
     let gold_kinds = [
         PieceKind::Kin,
@@ -71,36 +117,54 @@ pub fn is_attacked(board: &Board, sq: Square, by: Color) -> bool {
         PieceKind::Narigin,
     ];
     for &dir in gold_dirs {
-        if let Some(from) = sq.step(dir) {
-            if gold_kinds.iter().any(|&k| board.pieces(by, k).contains(from)) {
-                return true;
-            }
+        if let Some(from) = sq.step(dir)
+            && gold_kinds
+                .iter()
+                .any(|&k| board.pieces(by, k).contains(from))
+        {
+            return true;
         }
     }
 
     // Bishop / Uma: diagonal sliding
     for dir in [Direction::NE, Direction::NW, Direction::SE, Direction::SW] {
-        if slide_hits(dir, &[PieceKind::Kaku, PieceKind::Uma]) { return true; }
+        if slide_hits(dir, &[PieceKind::Kaku, PieceKind::Uma]) {
+            return true;
+        }
     }
     // Rook / Ryu: orthogonal sliding
     for dir in [Direction::N, Direction::S, Direction::E, Direction::W] {
-        if slide_hits(dir, &[PieceKind::Hisha, PieceKind::Ryu]) { return true; }
+        if slide_hits(dir, &[PieceKind::Hisha, PieceKind::Ryu]) {
+            return true;
+        }
     }
     // Uma 1-step orthogonal bonus
     for dir in [Direction::N, Direction::S, Direction::E, Direction::W] {
-        if step_hits(dir, PieceKind::Uma) { return true; }
+        if step_hits(dir, PieceKind::Uma) {
+            return true;
+        }
     }
     // Ryu 1-step diagonal bonus
     for dir in [Direction::NE, Direction::NW, Direction::SE, Direction::SW] {
-        if step_hits(dir, PieceKind::Ryu) { return true; }
+        if step_hits(dir, PieceKind::Ryu) {
+            return true;
+        }
     }
 
     // King
     for dir in [
-        Direction::N, Direction::S, Direction::E, Direction::W,
-        Direction::NE, Direction::NW, Direction::SE, Direction::SW,
+        Direction::N,
+        Direction::S,
+        Direction::E,
+        Direction::W,
+        Direction::NE,
+        Direction::NW,
+        Direction::SE,
+        Direction::SW,
     ] {
-        if step_hits(dir, PieceKind::Ou) { return true; }
+        if step_hits(dir, PieceKind::Ou) {
+            return true;
+        }
     }
 
     false
@@ -111,7 +175,7 @@ pub fn is_in_check(board: &Board, color: Color) -> bool {
     let king_bb = board.pieces(color, PieceKind::Ou);
     match king_bb.lsb() {
         Some(king_sq) => is_attacked(board, king_sq, color.flip()),
-        None          => false, // no king on board (shouldn't happen in a valid position)
+        None => false, // no king on board (shouldn't happen in a valid position)
     }
 }
 
@@ -145,7 +209,7 @@ fn push_with_promotion(
     };
 
     let in_zone = promote_zone.contains(from) || promote_zone.contains(to);
-    let must    = stuck.contains(to);
+    let must = stuck.contains(to);
 
     if in_zone {
         moves.push(Move::normal(from, to, kind, true));
@@ -170,7 +234,9 @@ fn gen_steps(
     while let Some(from) = pieces.pop_lsb() {
         for &dir in dirs {
             if let Some(to) = from.step(dir) {
-                if own.contains(to) { continue; }
+                if own.contains(to) {
+                    continue;
+                }
                 push_with_promotion(from, to, kind, color, moves);
             }
         }
@@ -192,9 +258,13 @@ fn gen_sliding(
         for &dir in dirs {
             let mut cur = from;
             while let Some(to) = cur.step(dir) {
-                if own.contains(to) { break; }
+                if own.contains(to) {
+                    break;
+                }
                 push_with_promotion(from, to, kind, color, moves);
-                if occ.contains(to) { break; } // stop after capturing an enemy piece
+                if occ.contains(to) {
+                    break;
+                } // stop after capturing an enemy piece
                 cur = to;
             }
         }
@@ -210,17 +280,21 @@ fn gen_uma(board: &Board, color: Color, moves: &mut Vec<Move>) {
         for dir in [Direction::NE, Direction::NW, Direction::SE, Direction::SW] {
             let mut cur = from;
             while let Some(to) = cur.step(dir) {
-                if own.contains(to) { break; }
+                if own.contains(to) {
+                    break;
+                }
                 moves.push(Move::normal(from, to, PieceKind::Uma, false));
-                if occ.contains(to) { break; }
+                if occ.contains(to) {
+                    break;
+                }
                 cur = to;
             }
         }
         for dir in [Direction::N, Direction::S, Direction::E, Direction::W] {
-            if let Some(to) = from.step(dir) {
-                if !own.contains(to) {
-                    moves.push(Move::normal(from, to, PieceKind::Uma, false));
-                }
+            if let Some(to) = from.step(dir)
+                && !own.contains(to)
+            {
+                moves.push(Move::normal(from, to, PieceKind::Uma, false));
             }
         }
     }
@@ -235,17 +309,21 @@ fn gen_ryu(board: &Board, color: Color, moves: &mut Vec<Move>) {
         for dir in [Direction::N, Direction::S, Direction::E, Direction::W] {
             let mut cur = from;
             while let Some(to) = cur.step(dir) {
-                if own.contains(to) { break; }
+                if own.contains(to) {
+                    break;
+                }
                 moves.push(Move::normal(from, to, PieceKind::Ryu, false));
-                if occ.contains(to) { break; }
+                if occ.contains(to) {
+                    break;
+                }
                 cur = to;
             }
         }
         for dir in [Direction::NE, Direction::NW, Direction::SE, Direction::SW] {
-            if let Some(to) = from.step(dir) {
-                if !own.contains(to) {
-                    moves.push(Move::normal(from, to, PieceKind::Ryu, false));
-                }
+            if let Some(to) = from.step(dir)
+                && !own.contains(to)
+            {
+                moves.push(Move::normal(from, to, PieceKind::Ryu, false));
             }
         }
     }
@@ -254,7 +332,7 @@ fn gen_ryu(board: &Board, color: Color, moves: &mut Vec<Move>) {
 /// Generate drop moves, excluding nifu and piece-stuck positions
 fn gen_drops(board: &Board, color: Color, moves: &mut Vec<Move>) {
     let empty = !board.occ();
-    let hand  = board.hand(color);
+    let hand = board.hand(color);
 
     for kind in hand.iter() {
         let mut targets = empty;
@@ -267,8 +345,12 @@ fn gen_drops(board: &Board, color: Color, moves: &mut Vec<Move>) {
             (PieceKind::Fu | PieceKind::Kyou, Color::White) => {
                 targets &= !Bitboard::STUCK_FU_KYOU_WHITE;
             }
-            (PieceKind::Kei, Color::Black) => { targets &= !Bitboard::STUCK_KEI_BLACK; }
-            (PieceKind::Kei, Color::White) => { targets &= !Bitboard::STUCK_KEI_WHITE; }
+            (PieceKind::Kei, Color::Black) => {
+                targets &= !Bitboard::STUCK_KEI_BLACK;
+            }
+            (PieceKind::Kei, Color::White) => {
+                targets &= !Bitboard::STUCK_KEI_WHITE;
+            }
             _ => {}
         }
 
@@ -313,14 +395,40 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
     gen_steps(board, color, PieceKind::Kei, knight_dirs, &mut moves);
 
     let silver_dirs: &[Direction] = match color {
-        Color::Black => &[Direction::N, Direction::NE, Direction::NW, Direction::SE, Direction::SW],
-        Color::White => &[Direction::S, Direction::SE, Direction::SW, Direction::NE, Direction::NW],
+        Color::Black => &[
+            Direction::N,
+            Direction::NE,
+            Direction::NW,
+            Direction::SE,
+            Direction::SW,
+        ],
+        Color::White => &[
+            Direction::S,
+            Direction::SE,
+            Direction::SW,
+            Direction::NE,
+            Direction::NW,
+        ],
     };
     gen_steps(board, color, PieceKind::Gin, silver_dirs, &mut moves);
 
     let gold_dirs: &[Direction] = match color {
-        Color::Black => &[Direction::N, Direction::NE, Direction::NW, Direction::E, Direction::W, Direction::S],
-        Color::White => &[Direction::S, Direction::SE, Direction::SW, Direction::E, Direction::W, Direction::N],
+        Color::Black => &[
+            Direction::N,
+            Direction::NE,
+            Direction::NW,
+            Direction::E,
+            Direction::W,
+            Direction::S,
+        ],
+        Color::White => &[
+            Direction::S,
+            Direction::SE,
+            Direction::SW,
+            Direction::E,
+            Direction::W,
+            Direction::N,
+        ],
     };
     for kind in [
         PieceKind::Kin,
@@ -332,19 +440,41 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
         gen_steps(board, color, kind, gold_dirs, &mut moves);
     }
 
-    gen_sliding(board, color, PieceKind::Kaku,
-        &[Direction::NE, Direction::NW, Direction::SE, Direction::SW], &mut moves);
+    gen_sliding(
+        board,
+        color,
+        PieceKind::Kaku,
+        &[Direction::NE, Direction::NW, Direction::SE, Direction::SW],
+        &mut moves,
+    );
 
-    gen_sliding(board, color, PieceKind::Hisha,
-        &[Direction::N, Direction::S, Direction::E, Direction::W], &mut moves);
+    gen_sliding(
+        board,
+        color,
+        PieceKind::Hisha,
+        &[Direction::N, Direction::S, Direction::E, Direction::W],
+        &mut moves,
+    );
 
     gen_uma(board, color, &mut moves);
     gen_ryu(board, color, &mut moves);
 
-    gen_steps(board, color, PieceKind::Ou,
-        &[Direction::N, Direction::S, Direction::E, Direction::W,
-          Direction::NE, Direction::NW, Direction::SE, Direction::SW],
-        &mut moves);
+    gen_steps(
+        board,
+        color,
+        PieceKind::Ou,
+        &[
+            Direction::N,
+            Direction::S,
+            Direction::E,
+            Direction::W,
+            Direction::NE,
+            Direction::NW,
+            Direction::SE,
+            Direction::SW,
+        ],
+        &mut moves,
+    );
 
     gen_drops(board, color, &mut moves);
 
@@ -369,17 +499,16 @@ fn is_uchifuzume(board: &mut Board, opponent: Color) -> bool {
 
 /// Generate fully legal moves: filters pseudo-legal moves for own-king-in-check and uchifuzume
 pub fn generate_legal_moves(board: &mut Board) -> Vec<Move> {
-    let mover    = board.side_to_move;
+    let mover = board.side_to_move;
     let opponent = mover.flip();
-    let pseudos  = generate_moves(board);
+    let pseudos = generate_moves(board);
 
     let mut legals = Vec::with_capacity(pseudos.len());
     for m in pseudos {
         let tok = board.do_move(m);
         if !is_in_check(board, mover) {
-            let uzume = m.is_drop()
-                && m.piece_kind == PieceKind::Fu
-                && is_uchifuzume(board, opponent);
+            let uzume =
+                m.is_drop() && m.piece_kind == PieceKind::Fu && is_uchifuzume(board, opponent);
             if !uzume {
                 legals.push(m);
             }

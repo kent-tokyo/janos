@@ -1,4 +1,5 @@
 //! Compile-time Zobrist tables for incremental position hashing.
+#![allow(clippy::needless_range_loop)]
 //!
 //! Layout of the flat table (KEYS):
 //!   [0 .. 2268)   piece keys:     index = sq * 28 + color * 14 + kind
@@ -14,7 +15,7 @@ use crate::square::Square;
 
 const TABLE_LEN: usize = 81 * 14 * 2   // board piece keys
     + 2 * 7 * 19                         // hand delta keys (max count 19)
-    + 1;                                  // side-to-move key
+    + 1; // side-to-move key
 
 // Compile-time LCG — deterministic, portable, no runtime cost.
 const fn lcg(state: u64) -> u64 {
@@ -40,7 +41,7 @@ static KEYS: [u64; TABLE_LEN] = build_table();
 // ---- Index helpers ----
 
 const PIECE_BASE: usize = 0;
-const HAND_BASE:  usize = 81 * 14 * 2;
+const HAND_BASE: usize = 81 * 14 * 2;
 const SIDE_KEY_IDX: usize = HAND_BASE + 2 * 7 * 19;
 
 /// Hash contribution for a piece on a square.
@@ -53,12 +54,12 @@ pub fn piece_key(sq: Square, color: Color, kind: PieceKind) -> u64 {
 #[inline]
 fn hand_kind_idx(kind: PieceKind) -> usize {
     match kind {
-        PieceKind::Fu    => 0,
-        PieceKind::Kyou  => 1,
-        PieceKind::Kei   => 2,
-        PieceKind::Gin   => 3,
-        PieceKind::Kin   => 4,
-        PieceKind::Kaku  => 5,
+        PieceKind::Fu => 0,
+        PieceKind::Kyou => 1,
+        PieceKind::Kei => 2,
+        PieceKind::Gin => 3,
+        PieceKind::Kin => 4,
+        PieceKind::Kaku => 5,
         PieceKind::Hisha => 6,
         _ => panic!("not a hand piece"),
     }
@@ -69,7 +70,7 @@ fn hand_kind_idx(kind: PieceKind) -> usize {
 /// `new_count` is the count after the change (1..=19).
 #[inline]
 pub fn hand_delta(color: Color, kind: PieceKind, new_count: u8) -> u64 {
-    debug_assert!(new_count >= 1 && new_count <= 19);
+    debug_assert!((1..=19).contains(&new_count));
     KEYS[HAND_BASE + color.index() * 7 * 19 + hand_kind_idx(kind) * 19 + (new_count as usize - 1)]
 }
 
@@ -82,8 +83,8 @@ pub fn side_key() -> u64 {
 /// Compute the full Zobrist hash for a board from scratch.
 /// Used only in `startpos()` and tests; incremental updates via do_move / undo_move.
 pub fn compute_hash(
-    mailbox:      &[Option<(Color, PieceKind)>; 81],
-    hand_counts:  &[[u8; 7]; 2],  // [color][kind_idx]
+    mailbox: &[Option<(Color, PieceKind)>; 81],
+    hand_counts: &[[u8; 7]; 2], // [color][kind_idx]
     side_to_move: Color,
 ) -> u64 {
     let mut h = 0u64;
@@ -98,8 +99,13 @@ pub fn compute_hash(
         for k in 0..7 {
             for n in 1..=hand_counts[c][k] {
                 let kind = [
-                    PieceKind::Fu, PieceKind::Kyou, PieceKind::Kei, PieceKind::Gin,
-                    PieceKind::Kin, PieceKind::Kaku, PieceKind::Hisha,
+                    PieceKind::Fu,
+                    PieceKind::Kyou,
+                    PieceKind::Kei,
+                    PieceKind::Gin,
+                    PieceKind::Kin,
+                    PieceKind::Kaku,
+                    PieceKind::Hisha,
                 ][k];
                 let color = if c == 0 { Color::Black } else { Color::White };
                 h ^= hand_delta(color, kind, n);

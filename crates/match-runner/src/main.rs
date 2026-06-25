@@ -28,37 +28,76 @@ use engine::UsiEngine;
 struct Args {
     engine1_path: String,
     engine2_path: String,
-    args1:        Vec<String>,
-    args2:        Vec<String>,
-    games:        usize,
-    byoyomi_ms:   u64,
-    output_dir:   Option<PathBuf>,
-    max_moves:    usize,
+    args1: Vec<String>,
+    args2: Vec<String>,
+    games: usize,
+    byoyomi_ms: u64,
+    output_dir: Option<PathBuf>,
+    max_moves: usize,
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut engine1 = None;
     let mut engine2 = None;
-    let mut args1   = Vec::new();
-    let mut args2   = Vec::new();
-    let mut games   = 100usize;
+    let mut args1 = Vec::new();
+    let mut args2 = Vec::new();
+    let mut games = 100usize;
     let mut byoyomi = 10_000u64;
-    let mut output  = None;
-    let mut max_mv  = 512usize;
+    let mut output = None;
+    let mut max_mv = 512usize;
     let mut i = 0;
 
     while i < argv.len() {
         match argv[i].as_str() {
-            "--engine1"   => { i += 1; engine1 = Some(get(&argv, i)?); }
-            "--engine2"   => { i += 1; engine2 = Some(get(&argv, i)?); }
-            "--args1"     => { i += 1; args1 = get(&argv, i)?.split_whitespace().map(str::to_string).collect(); }
-            "--args2"     => { i += 1; args2 = get(&argv, i)?.split_whitespace().map(str::to_string).collect(); }
-            "--games"     => { i += 1; games   = get(&argv, i)?.parse().map_err(|e| format!("--games: {e}"))?; }
-            "--byoyomi"   => { i += 1; byoyomi = get(&argv, i)?.parse().map_err(|e| format!("--byoyomi: {e}"))?; }
-            "--output"    => { i += 1; output  = Some(PathBuf::from(get(&argv, i)?)); }
-            "--max-moves" => { i += 1; max_mv  = get(&argv, i)?.parse().map_err(|e| format!("--max-moves: {e}"))?; }
-            "--help" | "-h" => { print_usage(); std::process::exit(0); }
+            "--engine1" => {
+                i += 1;
+                engine1 = Some(get(&argv, i)?);
+            }
+            "--engine2" => {
+                i += 1;
+                engine2 = Some(get(&argv, i)?);
+            }
+            "--args1" => {
+                i += 1;
+                args1 = get(&argv, i)?
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect();
+            }
+            "--args2" => {
+                i += 1;
+                args2 = get(&argv, i)?
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect();
+            }
+            "--games" => {
+                i += 1;
+                games = get(&argv, i)?
+                    .parse()
+                    .map_err(|e| format!("--games: {e}"))?;
+            }
+            "--byoyomi" => {
+                i += 1;
+                byoyomi = get(&argv, i)?
+                    .parse()
+                    .map_err(|e| format!("--byoyomi: {e}"))?;
+            }
+            "--output" => {
+                i += 1;
+                output = Some(PathBuf::from(get(&argv, i)?));
+            }
+            "--max-moves" => {
+                i += 1;
+                max_mv = get(&argv, i)?
+                    .parse()
+                    .map_err(|e| format!("--max-moves: {e}"))?;
+            }
+            "--help" | "-h" => {
+                print_usage();
+                std::process::exit(0);
+            }
             other => return Err(format!("unknown option: {other}")),
         }
         i += 1;
@@ -67,15 +106,19 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         engine1_path: engine1.ok_or("--engine1 is required")?,
         engine2_path: engine2.ok_or("--engine2 is required")?,
-        args1, args2, games,
+        args1,
+        args2,
+        games,
         byoyomi_ms: byoyomi,
         output_dir: output,
-        max_moves:  max_mv,
+        max_moves: max_mv,
     })
 }
 
 fn get(argv: &[String], i: usize) -> Result<String, String> {
-    argv.get(i).cloned().ok_or_else(|| "missing argument value".to_string())
+    argv.get(i)
+        .cloned()
+        .ok_or_else(|| "missing argument value".to_string())
 }
 
 fn print_usage() {
@@ -94,7 +137,11 @@ fn print_usage() {
 // ---- Match runner ----
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Outcome { E1Win, E2Win, Draw }
+enum Outcome {
+    E1Win,
+    E2Win,
+    Draw,
+}
 
 fn run_game(
     e1: &mut UsiEngine,
@@ -113,7 +160,7 @@ fn run_game(
         // Which engine moves now?
         // ply 0 = Black's move.  If e1_is_black: e1 on even plies, e2 on odd plies.
         let e1_turn = (ply % 2 == 0) == e1_is_black;
-        let mover   = if e1_turn { &mut *e1 } else { &mut *e2 };
+        let mover = if e1_turn { &mut *e1 } else { &mut *e2 };
 
         let pos_cmd = if moves.is_empty() {
             "position startpos".to_string()
@@ -128,12 +175,20 @@ fn run_game(
 
         if mv == "resign" {
             // Current mover resigns → the other side wins
-            let outcome = if e1_turn { Outcome::E2Win } else { Outcome::E1Win };
+            let outcome = if e1_turn {
+                Outcome::E2Win
+            } else {
+                Outcome::E1Win
+            };
             return (outcome, moves);
         }
         if mv == "win" {
             // Current mover declares win (e.g. jishogi)
-            let outcome = if e1_turn { Outcome::E1Win } else { Outcome::E2Win };
+            let outcome = if e1_turn {
+                Outcome::E1Win
+            } else {
+                Outcome::E2Win
+            };
             return (outcome, moves);
         }
 
@@ -155,13 +210,23 @@ fn main() {
     }
 
     // Launch engines
-    let mut e1 = UsiEngine::launch(&args.engine1_path, &args.args1)
-        .unwrap_or_else(|e| { eprintln!("failed to launch engine1: {e}"); std::process::exit(1); });
-    let mut e2 = UsiEngine::launch(&args.engine2_path, &args.args2)
-        .unwrap_or_else(|e| { eprintln!("failed to launch engine2: {e}"); std::process::exit(1); });
+    let mut e1 = UsiEngine::launch(&args.engine1_path, &args.args1).unwrap_or_else(|e| {
+        eprintln!("failed to launch engine1: {e}");
+        std::process::exit(1);
+    });
+    let mut e2 = UsiEngine::launch(&args.engine2_path, &args.args2).unwrap_or_else(|e| {
+        eprintln!("failed to launch engine2: {e}");
+        std::process::exit(1);
+    });
 
-    e1.initialize().unwrap_or_else(|e| { eprintln!("engine1 init failed: {e}"); std::process::exit(1); });
-    e2.initialize().unwrap_or_else(|e| { eprintln!("engine2 init failed: {e}"); std::process::exit(1); });
+    e1.initialize().unwrap_or_else(|e| {
+        eprintln!("engine1 init failed: {e}");
+        std::process::exit(1);
+    });
+    e2.initialize().unwrap_or_else(|e| {
+        eprintln!("engine2 init failed: {e}");
+        std::process::exit(1);
+    });
 
     println!("Engine1: {}", e1.name);
     println!("Engine2: {}", e2.name);
@@ -170,30 +235,49 @@ fn main() {
 
     let mut e1_wins = 0usize;
     let mut e2_wins = 0usize;
-    let mut draws   = 0usize;
+    let mut draws = 0usize;
 
     for game_num in 1..=args.games {
         let e1_is_black = game_num % 2 == 1; // alternate colors each game
 
         let (outcome, moves) = run_game(
-            &mut e1, &mut e2,
+            &mut e1,
+            &mut e2,
             e1_is_black,
             args.byoyomi_ms,
             args.max_moves,
         );
 
-        let (e1_color, e2_color) = if e1_is_black { ("Black", "White") } else { ("White", "Black") };
+        let (e1_color, e2_color) = if e1_is_black {
+            ("Black", "White")
+        } else {
+            ("White", "Black")
+        };
 
         let result_str = match outcome {
-            Outcome::E1Win => { e1_wins += 1; format!("{} Win", e1.name) }
-            Outcome::E2Win => { e2_wins += 1; format!("{} Win", e2.name) }
-            Outcome::Draw  => { draws   += 1; "Draw".to_string() }
+            Outcome::E1Win => {
+                e1_wins += 1;
+                format!("{} Win", e1.name)
+            }
+            Outcome::E2Win => {
+                e2_wins += 1;
+                format!("{} Win", e2.name)
+            }
+            Outcome::Draw => {
+                draws += 1;
+                "Draw".to_string()
+            }
         };
 
         println!(
             "Game {:>4}: {} ({}) vs {} ({}) → {}  ({} moves)",
-            game_num, e1.name, e1_color, e2.name, e2_color,
-            result_str, moves.len()
+            game_num,
+            e1.name,
+            e1_color,
+            e2.name,
+            e2_color,
+            result_str,
+            moves.len()
         );
 
         // Optionally save game record
@@ -210,11 +294,25 @@ fn main() {
 
     // Summary
     let total = e1_wins + e2_wins + draws;
-    let e1_pct = if total > 0 { (e1_wins * 100 + draws * 50) as f64 / total as f64 } else { 0.0 };
-    let e2_pct = if total > 0 { (e2_wins * 100 + draws * 50) as f64 / total as f64 } else { 0.0 };
+    let e1_pct = if total > 0 {
+        (e1_wins * 100 + draws * 50) as f64 / total as f64
+    } else {
+        0.0
+    };
+    let e2_pct = if total > 0 {
+        (e2_wins * 100 + draws * 50) as f64 / total as f64
+    } else {
+        0.0
+    };
 
     println!();
     println!("=== Results after {total} games ===");
-    println!("  {}: {}W {}L {}D  ({:.1}%)", e1.name, e1_wins, e2_wins, draws, e1_pct);
-    println!("  {}: {}W {}L {}D  ({:.1}%)", e2.name, e2_wins, e1_wins, draws, e2_pct);
+    println!(
+        "  {}: {}W {}L {}D  ({:.1}%)",
+        e1.name, e1_wins, e2_wins, draws, e1_pct
+    );
+    println!(
+        "  {}: {}W {}L {}D  ({:.1}%)",
+        e2.name, e2_wins, e1_wins, draws, e2_pct
+    );
 }

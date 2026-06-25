@@ -66,7 +66,7 @@ impl Square {
         let (df, dr) = dir.delta();
         let nf = f + df;
         let nr = r + dr;
-        if nf < 0 || nf > 8 || nr < 0 || nr > 8 {
+        if !(0..=8).contains(&nf) || !(0..=8).contains(&nr) {
             None
         } else {
             Some(Square::from_fr(nf as u8, nr as u8))
@@ -98,18 +98,18 @@ impl Direction {
     #[inline]
     pub const fn delta(self) -> (i8, i8) {
         match self {
-            Direction::N        => (0, -1),
-            Direction::S        => (0,  1),
-            Direction::E        => (-1, 0),
-            Direction::W        => ( 1, 0),
-            Direction::NE       => (-1, -1),
-            Direction::NW       => ( 1, -1),
-            Direction::SE       => (-1,  1),
-            Direction::SW       => ( 1,  1),
+            Direction::N => (0, -1),
+            Direction::S => (0, 1),
+            Direction::E => (-1, 0),
+            Direction::W => (1, 0),
+            Direction::NE => (-1, -1),
+            Direction::NW => (1, -1),
+            Direction::SE => (-1, 1),
+            Direction::SW => (1, 1),
             Direction::KnightN1 => (-1, -2),
-            Direction::KnightN2 => ( 1, -2),
-            Direction::KnightS1 => (-1,  2),
-            Direction::KnightS2 => ( 1,  2),
+            Direction::KnightN2 => (1, -2),
+            Direction::KnightS1 => (-1, 2),
+            Direction::KnightS2 => (1, 2),
         }
     }
 }

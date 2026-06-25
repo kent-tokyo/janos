@@ -11,15 +11,15 @@ use shogi_core::{
     board::Board,
     color::Color,
     nnue::load_weights,
-    sfen::{move_to_usi, parse_position_cmd},
     search::{SearchConfig, Searcher},
+    sfen::{move_to_usi, parse_position_cmd},
     tt::Tt,
 };
 
 // ---- Engine identity ----
 
-const ENGINE_NAME:    &str = "Janos";
-const ENGINE_AUTHOR:  &str = "ke.tanabe@gmail.com";
+const ENGINE_NAME: &str = "Janos";
+const ENGINE_AUTHOR: &str = "ke.tanabe@gmail.com";
 const DEFAULT_HASH_MB: usize = 64;
 
 // ---- Main loop ----
@@ -34,10 +34,10 @@ fn main() {
         }
     }
 
-    let stdin  = io::stdin();
+    let stdin = io::stdin();
     let stdout = io::stdout();
 
-    let tt       = Tt::new(DEFAULT_HASH_MB);
+    let tt = Tt::new(DEFAULT_HASH_MB);
     let searcher = Searcher::new(tt.clone());
 
     // Current board position (updated by "position" commands)
@@ -46,7 +46,9 @@ fn main() {
     for raw in stdin.lock().lines() {
         let Ok(line) = raw else { break };
         let line = line.trim().to_string();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let (cmd, rest) = line
             .split_once(' ')
@@ -72,30 +74,34 @@ fn main() {
                 board = Board::startpos();
             }
 
-            "position" => {
-                match parse_position_cmd(rest) {
-                    Ok(b) => board = b,
-                    Err(e) => eprintln!("position error: {e}"),
-                }
-            }
+            "position" => match parse_position_cmd(rest) {
+                Ok(b) => board = b,
+                Err(e) => eprintln!("position error: {e}"),
+            },
 
             "go" => {
                 let config = parse_go(rest, board.side_to_move);
-                let info   = searcher.search(&mut board, config);
+                let info = searcher.search(&mut board, config);
 
                 // Output a single info line with the completed search result
                 let elapsed_ms = info.elapsed.as_millis().max(1) as u64;
-                let nps        = info.nodes.saturating_mul(1000) / elapsed_ms;
+                let nps = info.nodes.saturating_mul(1000) / elapsed_ms;
                 if let Some(m) = info.best_move {
                     println!(
                         "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                        info.depth, info.score, info.nodes, nps, elapsed_ms,
-                        info.hashfull, move_to_usi(m)
+                        info.depth,
+                        info.score,
+                        info.nodes,
+                        nps,
+                        elapsed_ms,
+                        info.hashfull,
+                        move_to_usi(m)
                     );
                 }
 
-                let best = info.best_move
-                    .map(|m| move_to_usi(m))
+                let best = info
+                    .best_move
+                    .map(move_to_usi)
                     .unwrap_or_else(|| "resign".to_string());
                 println!("bestmove {best}");
                 stdout.lock().flush().ok();
@@ -122,23 +128,40 @@ fn main() {
 // ---- Go command time-control parsing ----
 
 fn parse_go(args: &str, side: Color) -> SearchConfig {
-    let mut btime:    Option<u64> = None;
-    let mut wtime:    Option<u64> = None;
-    let mut byoyomi:  Option<u64> = None;
+    let mut btime: Option<u64> = None;
+    let mut wtime: Option<u64> = None;
+    let mut byoyomi: Option<u64> = None;
     let mut movetime: Option<u64> = None;
-    let mut depth:    Option<u32> = None;
-    let mut infinite  = false;
+    let mut depth: Option<u32> = None;
+    let mut infinite = false;
 
     let tokens: Vec<&str> = args.split_whitespace().collect();
     let mut i = 0;
     while i < tokens.len() {
         match tokens[i] {
-            "btime"    => { i += 1; btime    = tokens.get(i).and_then(|s| s.parse().ok()); }
-            "wtime"    => { i += 1; wtime    = tokens.get(i).and_then(|s| s.parse().ok()); }
-            "byoyomi"  => { i += 1; byoyomi  = tokens.get(i).and_then(|s| s.parse().ok()); }
-            "movetime" => { i += 1; movetime = tokens.get(i).and_then(|s| s.parse().ok()); }
-            "depth"    => { i += 1; depth    = tokens.get(i).and_then(|s| s.parse().ok()); }
-            "infinite" => { infinite = true; }
+            "btime" => {
+                i += 1;
+                btime = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "wtime" => {
+                i += 1;
+                wtime = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "byoyomi" => {
+                i += 1;
+                byoyomi = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "movetime" => {
+                i += 1;
+                movetime = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "depth" => {
+                i += 1;
+                depth = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "infinite" => {
+                infinite = true;
+            }
             _ => {}
         }
         i += 1;
@@ -158,10 +181,10 @@ fn parse_go(args: &str, side: Color) -> SearchConfig {
             Color::Black => btime.unwrap_or(0),
             Color::White => wtime.unwrap_or(0),
         };
-        let byo_ms   = byoyomi.unwrap_or(0);
+        let byo_ms = byoyomi.unwrap_or(0);
         let from_main = if our_time > 0 { our_time / 30 } else { 0 };
-        let from_byo  = byo_ms * 13 / 20; // 65% — accounts for YBW parallel search overshoot
-        let alloc     = from_main.max(from_byo).max(100);
+        let from_byo = byo_ms * 13 / 20; // 65% — accounts for YBW parallel search overshoot
+        let alloc = from_main.max(from_byo).max(100);
         Some(Duration::from_millis(alloc))
     };
 

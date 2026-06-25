@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 pub struct UsiEngine {
     _process: Child,
-    stdin:    BufWriter<ChildStdin>,
-    stdout:   BufReader<ChildStdout>,
+    stdin: BufWriter<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
     pub name: String,
 }
 
@@ -21,10 +21,15 @@ impl UsiEngine {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let stdin  = BufWriter::new(child.stdin.take().unwrap());
+        let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
 
-        Ok(UsiEngine { _process: child, stdin, stdout, name: path.to_string() })
+        Ok(UsiEngine {
+            _process: child,
+            stdin,
+            stdout,
+            name: path.to_string(),
+        })
     }
 
     /// Send a USI command line.
@@ -44,7 +49,9 @@ impl UsiEngine {
     pub fn wait_for(&mut self, token: &str) -> io::Result<String> {
         loop {
             let line = self.recv_line()?;
-            if line.contains(token) { return Ok(line); }
+            if line.contains(token) {
+                return Ok(line);
+            }
         }
     }
 
@@ -56,7 +63,7 @@ impl UsiEngine {
         loop {
             let line = self.recv_line()?;
             if line.starts_with("id name ") {
-                self.name = line["id name ".len()..].to_string();
+                self.name = line.strip_prefix("id name ").unwrap_or(&line).to_string();
             } else if line.contains("usiok") {
                 break;
             }
@@ -81,7 +88,11 @@ impl UsiEngine {
             let line = self.recv_line()?;
             if line.starts_with("bestmove") {
                 // "bestmove 7g7f" or "bestmove resign"
-                let mv = line.split_whitespace().nth(1).unwrap_or("resign").to_string();
+                let mv = line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("resign")
+                    .to_string();
                 return Ok(mv);
             }
             // Ignore `info` lines

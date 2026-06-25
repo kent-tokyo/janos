@@ -19,16 +19,16 @@
 //! -----
 //!   cargo run -p bench --bin sync_overhead --release
 
-use std::sync::{Arc, Barrier};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use shogi_core::tt::Tt;
 
 const OPS_PER_THREAD: u64 = 5_000_000;
-const TT_MB:          usize = 4;   // fits in L3; removes DRAM-bandwidth noise
-const REPS:           usize = 7;   // keep best of REPS
+const TT_MB: usize = 4; // fits in L3; removes DRAM-bandwidth noise
+const REPS: usize = 7; // keep best of REPS
 
 fn xorshift64(s: &mut u64) -> u64 {
     *s ^= *s << 13;
@@ -50,13 +50,20 @@ where
         let mut handles = Vec::with_capacity(threads);
         for t in 0..threads {
             let bar = Arc::clone(&bar);
-            let w   = worker.clone();
-            handles.push(thread::spawn(move || { bar.wait(); w(t); }));
+            let w = worker.clone();
+            handles.push(thread::spawn(move || {
+                bar.wait();
+                w(t);
+            }));
         }
         let t0 = Instant::now();
-        for h in handles { h.join().unwrap(); }
+        for h in handles {
+            h.join().unwrap();
+        }
         let elapsed = t0.elapsed();
-        if elapsed < best { best = elapsed; }
+        if elapsed < best {
+            best = elapsed;
+        }
     }
     (OPS_PER_THREAD * threads as u64) as f64 / best.as_secs_f64()
 }
@@ -66,7 +73,7 @@ where
 // contended:  every thread accesses random slots across the full TT.
 // partitioned: TT logically split into N equal strips; thread t stays in strip t.
 fn differential_tt(threads: usize) -> f64 {
-    let tt   = Tt::new(TT_MB);
+    let tt = Tt::new(TT_MB);
     let size = tt.len() as u64; // power-of-2 number of slots
 
     // Contended: uniform random across whole table
@@ -76,14 +83,18 @@ fn differential_tt(threads: usize) -> f64 {
             let mut rng: u64 = 0xDEAD ^ (t as u64).wrapping_mul(0x9E37_79B9).wrapping_add(1);
             for _ in 0..OPS_PER_THREAD {
                 let hash = xorshift64(&mut rng);
-                if hash & 1 == 0 { let _ = tt.probe(hash); }
-                else {
-                    tt.store(hash, shogi_core::tt::TtEntry {
-                        score: (hash & 0xFFFF) as i32 - 32768,
-                        depth: ((hash >> 16) & 0x7F) as u8,
-                        bound: shogi_core::tt::Bound::Exact,
-                        mv:    None,
-                    });
+                if hash & 1 == 0 {
+                    let _ = tt.probe(hash);
+                } else {
+                    tt.store(
+                        hash,
+                        shogi_core::tt::TtEntry {
+                            score: (hash & 0xFFFF) as i32 - 32768,
+                            depth: ((hash >> 16) & 0x7F) as u8,
+                            bound: shogi_core::tt::Bound::Exact,
+                            mv: None,
+                        },
+                    );
                 }
             }
         })
@@ -103,14 +114,18 @@ fn differential_tt(threads: usize) -> f64 {
                 // probe/store disambiguated by next rand bit
                 let ctrl = xorshift64(&mut rng);
                 let hash = base | offset; // route to our strip
-                if ctrl & 1 == 0 { let _ = tt.probe(hash); }
-                else {
-                    tt.store(hash, shogi_core::tt::TtEntry {
-                        score: (ctrl & 0xFFFF) as i32 - 32768,
-                        depth: ((ctrl >> 16) & 0x7F) as u8,
-                        bound: shogi_core::tt::Bound::Exact,
-                        mv:    None,
-                    });
+                if ctrl & 1 == 0 {
+                    let _ = tt.probe(hash);
+                } else {
+                    tt.store(
+                        hash,
+                        shogi_core::tt::TtEntry {
+                            score: (ctrl & 0xFFFF) as i32 - 32768,
+                            depth: ((ctrl >> 16) & 0x7F) as u8,
+                            bound: shogi_core::tt::Bound::Exact,
+                            mv: None,
+                        },
+                    );
                 }
             }
         })
@@ -130,18 +145,16 @@ fn differential_history(threads: usize) -> f64 {
     // Align strip to 16 entries (= 1 cache line) so no false sharing at boundaries.
     let strip = ((LEN / threads).max(16) + 15) & !15;
 
-    let make = || Arc::new(
-        (0..LEN).map(|_| AtomicI32::new(0)).collect::<Vec<_>>()
-    );
+    let make = || Arc::new((0..LEN).map(|_| AtomicI32::new(0)).collect::<Vec<_>>());
 
     let worker_contended = {
         let hist = make();
-        let len  = LEN as u64;
+        let len = LEN as u64;
         move |t: usize| {
             let mut rng: u64 = 0xCAFE ^ (t as u64).wrapping_mul(0x6C62_272E).wrapping_add(1);
             for _ in 0..OPS_PER_THREAD {
                 let idx = (xorshift64(&mut rng) % len) as usize;
-                if xorshift64(&mut rng) % 33 == 0 {
+                if xorshift64(&mut rng).is_multiple_of(33) {
                     let old = hist[idx].load(Ordering::Relaxed);
                     hist[idx].store(old.saturating_add(9), Ordering::Relaxed);
                 } else {
@@ -155,12 +168,12 @@ fn differential_history(threads: usize) -> f64 {
         let hist = make();
         move |t: usize| {
             let base = (t * strip).min(LEN.saturating_sub(1));
-            let end  = (base + strip).min(LEN);
+            let end = (base + strip).min(LEN);
             let range = (end - base) as u64;
             let mut rng: u64 = 0xCAFE ^ (t as u64).wrapping_mul(0x6C62_272E).wrapping_add(1);
             for _ in 0..OPS_PER_THREAD {
                 let idx = base + (xorshift64(&mut rng) % range) as usize;
-                if xorshift64(&mut rng) % 33 == 0 {
+                if xorshift64(&mut rng).is_multiple_of(33) {
                     let old = hist[idx].load(Ordering::Relaxed);
                     hist[idx].store(old.saturating_add(9), Ordering::Relaxed);
                 } else {
@@ -182,7 +195,9 @@ fn print_table(label: &str, thread_counts: &[usize], overheads: &[f64]) -> f64 {
     let mut peak = 0.0f64;
     for (&t, &oh) in thread_counts.iter().zip(overheads.iter()) {
         println!("{:>8}  {:>11.2}%", t, oh);
-        if oh > peak { peak = oh; }
+        if oh > peak {
+            peak = oh;
+        }
     }
     println!();
     peak
@@ -218,14 +233,19 @@ fn main() {
     let tt_oh: Vec<f64> = thread_counts.iter().map(|&t| differential_tt(t)).collect();
     let tt_peak = print_table(
         "Transposition Table (4 MiB, 50% probe / 50% store, Relaxed)",
-        &thread_counts, &tt_oh,
+        &thread_counts,
+        &tt_oh,
     );
 
     // ── History ──────────────────────────────────────────────────────────────
-    let hist_oh: Vec<f64> = thread_counts.iter().map(|&t| differential_history(t)).collect();
+    let hist_oh: Vec<f64> = thread_counts
+        .iter()
+        .map(|&t| differential_history(t))
+        .collect();
     let hist_peak = print_table(
         "History table (2 268 × AtomicI32, 97% load / 3% store)",
-        &thread_counts, &hist_oh,
+        &thread_counts,
+        &hist_oh,
     );
 
     let max_overhead = tt_peak.max(hist_peak);

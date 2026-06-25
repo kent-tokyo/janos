@@ -14,12 +14,12 @@ const HAND_KINDS: [PieceKind; 7] = [
 #[inline]
 fn kind_index(kind: PieceKind) -> usize {
     match kind {
-        PieceKind::Fu    => 0,
-        PieceKind::Kyou  => 1,
-        PieceKind::Kei   => 2,
-        PieceKind::Gin   => 3,
-        PieceKind::Kin   => 4,
-        PieceKind::Kaku  => 5,
+        PieceKind::Fu => 0,
+        PieceKind::Kyou => 1,
+        PieceKind::Kei => 2,
+        PieceKind::Gin => 3,
+        PieceKind::Kin => 4,
+        PieceKind::Kaku => 5,
         PieceKind::Hisha => 6,
         _ => panic!("not a hand piece: {kind:?}"),
     }
@@ -60,9 +60,6 @@ impl Hand {
 
     /// Iterate over piece kinds currently in hand (at least one count)
     pub fn iter(&self) -> impl Iterator<Item = PieceKind> + use<'_> {
-        HAND_KINDS
-            .iter()
-            .copied()
-            .filter(move |&k| self.get(k) > 0)
+        HAND_KINDS.iter().copied().filter(move |&k| self.get(k) > 0)
     }
 }

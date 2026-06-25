@@ -37,7 +37,7 @@ pub struct Bitboard(pub u128);
 
 impl Bitboard {
     pub const EMPTY: Self = Bitboard(0);
-    pub const FULL: Self  = Bitboard((1u128 << 81) - 1);
+    pub const FULL: Self = Bitboard((1u128 << 81) - 1);
 
     // Rank masks (rank_0 = shogi_rank - 1)
     pub const RANK_1: Self = Bitboard(rank_mask(0));
@@ -52,10 +52,10 @@ impl Bitboard {
     pub const PROMOTE_WHITE: Self = Bitboard(ranks_mask(6, 8)); // ranks 7-9
 
     // Squares where a piece would have no legal moves if left unpromoted
-    pub const STUCK_FU_KYOU_BLACK: Self = Bitboard(rank_mask(0));      // rank 1
-    pub const STUCK_FU_KYOU_WHITE: Self = Bitboard(rank_mask(8));      // rank 9
-    pub const STUCK_KEI_BLACK:     Self = Bitboard(ranks_mask(0, 1));  // ranks 1-2
-    pub const STUCK_KEI_WHITE:     Self = Bitboard(ranks_mask(7, 8));  // ranks 8-9
+    pub const STUCK_FU_KYOU_BLACK: Self = Bitboard(rank_mask(0)); // rank 1
+    pub const STUCK_FU_KYOU_WHITE: Self = Bitboard(rank_mask(8)); // rank 9
+    pub const STUCK_KEI_BLACK: Self = Bitboard(ranks_mask(0, 1)); // ranks 1-2
+    pub const STUCK_KEI_WHITE: Self = Bitboard(ranks_mask(7, 8)); // ranks 8-9
 
     #[inline]
     pub const fn from_square(sq: Square) -> Self {
@@ -116,26 +116,40 @@ impl Bitboard {
 
 impl BitOr for Bitboard {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Bitboard(self.0 | rhs.0) }
+    fn bitor(self, rhs: Self) -> Self {
+        Bitboard(self.0 | rhs.0)
+    }
 }
 impl BitAnd for Bitboard {
     type Output = Self;
-    fn bitand(self, rhs: Self) -> Self { Bitboard(self.0 & rhs.0) }
+    fn bitand(self, rhs: Self) -> Self {
+        Bitboard(self.0 & rhs.0)
+    }
 }
 impl BitXor for Bitboard {
     type Output = Self;
-    fn bitxor(self, rhs: Self) -> Self { Bitboard(self.0 ^ rhs.0) }
+    fn bitxor(self, rhs: Self) -> Self {
+        Bitboard(self.0 ^ rhs.0)
+    }
 }
 impl Not for Bitboard {
     type Output = Self;
-    fn not(self) -> Self { Bitboard(!self.0 & Bitboard::FULL.0) }
+    fn not(self) -> Self {
+        Bitboard(!self.0 & Bitboard::FULL.0)
+    }
 }
 impl BitOrAssign for Bitboard {
-    fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
 }
 impl BitAndAssign for Bitboard {
-    fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0; }
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
 }
 impl BitXorAssign for Bitboard {
-    fn bitxor_assign(&mut self, rhs: Self) { self.0 ^= rhs.0; }
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0;
+    }
 }

@@ -21,20 +21,20 @@ use crate::square::Square;
 
 pub fn piece_to_sfen_char(kind: PieceKind) -> char {
     match kind {
-        PieceKind::Fu      => 'P',
-        PieceKind::Kyou    => 'L',
-        PieceKind::Kei     => 'N',
-        PieceKind::Gin     => 'S',
-        PieceKind::Kin     => 'G',
-        PieceKind::Kaku    => 'B',
-        PieceKind::Hisha   => 'R',
-        PieceKind::Ou      => 'K',
-        PieceKind::Tokin   => 'P', // promoted forms share the base letter + '+' prefix
+        PieceKind::Fu => 'P',
+        PieceKind::Kyou => 'L',
+        PieceKind::Kei => 'N',
+        PieceKind::Gin => 'S',
+        PieceKind::Kin => 'G',
+        PieceKind::Kaku => 'B',
+        PieceKind::Hisha => 'R',
+        PieceKind::Ou => 'K',
+        PieceKind::Tokin => 'P', // promoted forms share the base letter + '+' prefix
         PieceKind::Narikyo => 'L',
         PieceKind::Narikei => 'N',
         PieceKind::Narigin => 'S',
-        PieceKind::Uma     => 'B',
-        PieceKind::Ryu     => 'R',
+        PieceKind::Uma => 'B',
+        PieceKind::Ryu => 'R',
     }
 }
 
@@ -59,7 +59,11 @@ fn rank_to_char(rank: u8) -> char {
 }
 
 fn rank_from_char(c: char) -> Option<u8> {
-    if c >= 'a' && c <= 'i' { Some(c as u8 - b'a' + 1) } else { None }
+    if ('a'..='i').contains(&c) {
+        Some(c as u8 - b'a' + 1)
+    } else {
+        None
+    }
 }
 
 fn sq_to_usi(sq: Square) -> String {
@@ -72,7 +76,7 @@ pub fn move_to_usi(m: Move) -> String {
         None => {
             // Drop: e.g. "P*3d"
             let piece_char = piece_to_sfen_char(m.piece_kind);
-            let to         = sq_to_usi(m.to);
+            let to = sq_to_usi(m.to);
             format!("{piece_char}*{to}")
         }
         Some(from) => {
@@ -90,16 +94,14 @@ pub fn move_from_usi(s: &str, board: &crate::board::Board) -> Result<Move, Strin
     // Drop: e.g. "P*3d"
     if s.len() >= 4 && s.as_bytes()[1] == b'*' {
         let piece_char = s.chars().next().unwrap().to_ascii_uppercase();
-        let kind       = sfen_char_to_kind(piece_char)
+        let kind = sfen_char_to_kind(piece_char)
             .ok_or_else(|| format!("unknown drop piece '{piece_char}'"))?;
         if kind == PieceKind::Ou {
             return Err("cannot drop king".into());
         }
         let bytes = s.as_bytes();
-        let file  = (bytes[2] as char).to_digit(10)
-            .ok_or("bad drop file")? as u8;
-        let rank  = rank_from_char(bytes[3] as char)
-            .ok_or("bad drop rank")?;
+        let file = (bytes[2] as char).to_digit(10).ok_or("bad drop file")? as u8;
+        let rank = rank_from_char(bytes[3] as char).ok_or("bad drop rank")?;
         return Ok(Move::drop(Square::from_shogi(file, rank), kind));
     }
 
@@ -110,14 +112,15 @@ pub fn move_from_usi(s: &str, board: &crate::board::Board) -> Result<Move, Strin
     let bytes = s.as_bytes();
     let from_file = (bytes[0] as char).to_digit(10).ok_or("bad from file")? as u8;
     let from_rank = rank_from_char(bytes[1] as char).ok_or("bad from rank")?;
-    let to_file   = (bytes[2] as char).to_digit(10).ok_or("bad to file")? as u8;
-    let to_rank   = rank_from_char(bytes[3] as char).ok_or("bad to rank")?;
-    let promote   = s.len() >= 5 && bytes[4] == b'+';
+    let to_file = (bytes[2] as char).to_digit(10).ok_or("bad to file")? as u8;
+    let to_rank = rank_from_char(bytes[3] as char).ok_or("bad to rank")?;
+    let promote = s.len() >= 5 && bytes[4] == b'+';
 
     let from = Square::from_shogi(from_file, from_rank);
-    let to   = Square::from_shogi(to_file,   to_rank);
+    let to = Square::from_shogi(to_file, to_rank);
 
-    let piece = board.piece_at(from)
+    let piece = board
+        .piece_at(from)
         .ok_or_else(|| format!("no piece at {}", sq_to_usi(from)))?;
 
     Ok(Move::normal(from, to, piece.kind, promote))
@@ -132,7 +135,8 @@ pub fn board_to_sfen(board: &crate::board::Board) -> String {
     for rank in 1u8..=9 {
         let mut empty_count = 0u8;
 
-        for file in (1u8..=9).rev() {  // file 9 → file 1 (left to right in SFEN)
+        for file in (1u8..=9).rev() {
+            // file 9 → file 1 (left to right in SFEN)
             let sq = Square::from_shogi(file, rank);
             match board.piece_at(sq) {
                 None => {
@@ -165,17 +169,21 @@ pub fn board_to_sfen(board: &crate::board::Board) -> String {
     }
 
     // Side to move
-    let side = if board.side_to_move == Color::Black { "b" } else { "w" };
+    let side = if board.side_to_move == Color::Black {
+        "b"
+    } else {
+        "w"
+    };
 
     // Hand
     let hand_kinds = [
         (PieceKind::Hisha, 'R'),
-        (PieceKind::Kaku,  'B'),
-        (PieceKind::Kin,   'G'),
-        (PieceKind::Gin,   'S'),
-        (PieceKind::Kei,   'N'),
-        (PieceKind::Kyou,  'L'),
-        (PieceKind::Fu,    'P'),
+        (PieceKind::Kaku, 'B'),
+        (PieceKind::Kin, 'G'),
+        (PieceKind::Gin, 'S'),
+        (PieceKind::Kei, 'N'),
+        (PieceKind::Kyou, 'L'),
+        (PieceKind::Fu, 'P'),
     ];
 
     let mut hand_part = String::new();
@@ -186,7 +194,11 @@ pub fn board_to_sfen(board: &crate::board::Board) -> String {
                 if count > 1 {
                     hand_part.push_str(&count.to_string());
                 }
-                let c = if color == Color::Black { ch.to_ascii_uppercase() } else { ch.to_ascii_lowercase() };
+                let c = if color == Color::Black {
+                    ch.to_ascii_uppercase()
+                } else {
+                    ch.to_ascii_lowercase()
+                };
                 hand_part.push(c);
             }
         }
@@ -216,7 +228,8 @@ pub fn apply_moves(board: &mut crate::board::Board, moves_str: &str) -> Result<(
 ///   `sfen lnsgkgsnl/1r5b1/... b - 1 moves 7g7f`
 pub fn parse_position_cmd(body: &str) -> Result<crate::board::Board, String> {
     if let Some(rest) = body.strip_prefix("startpos") {
-        let moves = rest.trim_start()
+        let moves = rest
+            .trim_start()
             .strip_prefix("moves")
             .map(|s| s.trim())
             .unwrap_or("");
@@ -226,8 +239,8 @@ pub fn parse_position_cmd(body: &str) -> Result<crate::board::Board, String> {
     } else if let Some(sfen_rest) = body.strip_prefix("sfen ") {
         // The SFEN occupies the next 4 whitespace-separated tokens; moves follow "moves"
         let parts: Vec<&str> = sfen_rest.splitn(2, " moves ").collect();
-        let sfen   = parts[0].trim();
-        let moves  = parts.get(1).copied().unwrap_or("").trim();
+        let sfen = parts[0].trim();
+        let moves = parts.get(1).copied().unwrap_or("").trim();
         let mut board = crate::board::Board::from_sfen(sfen)?;
         apply_moves(&mut board, moves)?;
         Ok(board)
@@ -239,5 +252,4 @@ pub fn parse_position_cmd(body: &str) -> Result<crate::board::Board, String> {
 // ---- Test helpers ----
 
 /// The standard startpos SFEN string.
-pub const STARTPOS_SFEN: &str =
-    "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+pub const STARTPOS_SFEN: &str = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";

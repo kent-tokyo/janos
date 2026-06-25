@@ -28,8 +28,7 @@ fn policy_score(board: &Board, m: Move, tt_mv: Option<Move>) -> i32 {
 
     // Promotion gain
     if m.promote {
-        let gain = PIECE_VALUE[m.piece_kind.promoted().index()]
-            - PIECE_VALUE[m.piece_kind.index()];
+        let gain = PIECE_VALUE[m.piece_kind.promoted().index()] - PIECE_VALUE[m.piece_kind.index()];
         score += gain.max(0);
     }
 

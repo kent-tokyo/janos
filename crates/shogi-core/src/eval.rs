@@ -13,14 +13,14 @@ pub const PIECE_VALUE: [i32; PieceKind::COUNT] = [
     640,  // Gin
     680,  // Kin
     890,  // Kaku
-   1040,  // Hisha
-      0,  // Ou (not traded; excluded from material sum)
+    1040, // Hisha
+    0,    // Ou (not traded; excluded from material sum)
     600,  // Tokin
     600,  // Narikyo
     600,  // Narikei
     640,  // Narigin
-   1150,  // Uma
-   1300,  // Ryu
+    1150, // Uma
+    1300, // Ryu
 ];
 
 const HAND_KINDS: [PieceKind; 7] = [
@@ -62,19 +62,19 @@ pub fn evaluate(board: &Board) -> i32 {
 }
 
 fn material_score(board: &Board) -> i32 {
-    let us   = board.side_to_move;
+    let us = board.side_to_move;
     let them = us.flip();
     let mut score = 0i32;
 
     for &kind in &BOARD_KINDS {
         let v = PIECE_VALUE[kind.index()];
-        score += board.pieces(us,   kind).popcount() as i32 * v;
+        score += board.pieces(us, kind).popcount() as i32 * v;
         score -= board.pieces(them, kind).popcount() as i32 * v;
     }
 
     for &kind in &HAND_KINDS {
         let v = PIECE_VALUE[kind.index()];
-        score += board.hand(us).get(kind)   as i32 * v;
+        score += board.hand(us).get(kind) as i32 * v;
         score -= board.hand(them).get(kind) as i32 * v;
     }
 
@@ -95,8 +95,7 @@ pub fn move_order_score(board: &Board, m: crate::mv::Move) -> i32 {
                 10_000 + PIECE_VALUE[cap.kind.index()] - PIECE_VALUE[m.piece_kind.index()] / 10
             } else if m.promote {
                 // Promotion of a sliding piece: some gain
-                PIECE_VALUE[m.piece_kind.promoted().index()]
-                    - PIECE_VALUE[m.piece_kind.index()]
+                PIECE_VALUE[m.piece_kind.promoted().index()] - PIECE_VALUE[m.piece_kind.index()]
             } else {
                 0
             }

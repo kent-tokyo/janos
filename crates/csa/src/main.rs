@@ -29,7 +29,8 @@ fn main() {
     });
 
     // Load NNUE weights if specified
-    if let Some(path) = std::env::args().zip(std::env::args().skip(1))
+    if let Some(path) = std::env::args()
+        .zip(std::env::args().skip(1))
         .find(|(a, _)| a == "--weights")
         .map(|(_, v)| v)
     {
@@ -54,7 +55,9 @@ fn main() {
             }
         }
 
-        if !config.keep_alive { break; }
+        if !config.keep_alive {
+            break;
+        }
         let wait = (30 * attempts.min(4)) as u64;
         eprintln!("[csa] retrying in {wait}s…");
         std::thread::sleep(Duration::from_secs(wait));
@@ -68,33 +71,74 @@ fn parse_args() -> Result<Config, String> {
 
     while i < argv.len() {
         match argv[i].as_str() {
-            "--server"   => { i += 1; cfg.server       = arg(&argv, i)?; }
-            "--port"     => { i += 1; cfg.port         = arg(&argv, i)?.parse().map_err(|e| format!("--port: {e}"))?; }
-            "--user"     => { i += 1; cfg.user         = arg(&argv, i)?; }
-            "--password" => { i += 1; cfg.password     = arg(&argv, i)?; }
-            "--trip"     => {
+            "--server" => {
+                i += 1;
+                cfg.server = arg(&argv, i)?;
+            }
+            "--port" => {
+                i += 1;
+                cfg.port = arg(&argv, i)?.parse().map_err(|e| format!("--port: {e}"))?;
+            }
+            "--user" => {
+                i += 1;
+                cfg.user = arg(&argv, i)?;
+            }
+            "--password" => {
+                i += 1;
+                cfg.password = arg(&argv, i)?;
+            }
+            "--trip" => {
                 // Build password as "{game_id},{trip}" automatically
                 i += 1;
                 let trip = arg(&argv, i)?;
                 cfg.password = format!("{},{}", cfg.game_id, trip);
             }
-            "--game"     => { i += 1; cfg.game_id      = arg(&argv, i)?; }
-            "--hash"     => { i += 1; cfg.hash_mb      = arg(&argv, i)?.parse().map_err(|e| format!("--hash: {e}"))?; }
-            "--resign"   => { i += 1; cfg.resign_score = -(arg(&argv, i)?.parse::<i32>().map_err(|e| format!("--resign: {e}"))?); }
-            "--depth"    => { i += 1; cfg.max_depth    = arg(&argv, i)?.parse().map_err(|e| format!("--depth: {e}"))?; }
-            "--weights"  => { i += 1; /* handled in main */ }
-            "--loop"     => { cfg.keep_alive = true; }
-            "--help" | "-h" => { print_usage(); std::process::exit(0); }
-            other        => return Err(format!("unknown option: {other}")),
+            "--game" => {
+                i += 1;
+                cfg.game_id = arg(&argv, i)?;
+            }
+            "--hash" => {
+                i += 1;
+                cfg.hash_mb = arg(&argv, i)?.parse().map_err(|e| format!("--hash: {e}"))?;
+            }
+            "--resign" => {
+                i += 1;
+                cfg.resign_score = -(arg(&argv, i)?
+                    .parse::<i32>()
+                    .map_err(|e| format!("--resign: {e}"))?);
+            }
+            "--depth" => {
+                i += 1;
+                cfg.max_depth = arg(&argv, i)?
+                    .parse()
+                    .map_err(|e| format!("--depth: {e}"))?;
+            }
+            "--weights" => {
+                i += 1; /* handled in main */
+            }
+            "--loop" => {
+                cfg.keep_alive = true;
+            }
+            "--help" | "-h" => {
+                print_usage();
+                std::process::exit(0);
+            }
+            other => return Err(format!("unknown option: {other}")),
         }
         i += 1;
     }
 
+    // JANOS_USER env var
+    if cfg.user == "anonymous"
+        && let Ok(user) = std::env::var("JANOS_USER")
+    {
+        cfg.user = user;
+    }
     // JANOS_TRIP env var: auto-build password if --trip / --password not given
-    if cfg.password == Config::default().password {
-        if let Ok(trip) = std::env::var("JANOS_TRIP") {
-            cfg.password = format!("{},{}", cfg.game_id, trip);
-        }
+    if cfg.password == Config::default().password
+        && let Ok(trip) = std::env::var("JANOS_TRIP")
+    {
+        cfg.password = format!("{},{}", cfg.game_id, trip);
     }
 
     if cfg.user == "anonymous" {
@@ -104,7 +148,9 @@ fn parse_args() -> Result<Config, String> {
 }
 
 fn arg(argv: &[String], i: usize) -> Result<String, String> {
-    argv.get(i).cloned().ok_or_else(|| "missing argument value".to_string())
+    argv.get(i)
+        .cloned()
+        .ok_or_else(|| "missing argument value".to_string())
 }
 
 fn print_usage() {
@@ -127,15 +173,15 @@ fn print_usage() {
 impl Clone for Config {
     fn clone(&self) -> Self {
         Config {
-            server:       self.server.clone(),
-            port:         self.port,
-            user:         self.user.clone(),
-            password:     self.password.clone(),
-            game_id:      self.game_id.clone(),
-            hash_mb:      self.hash_mb,
+            server: self.server.clone(),
+            port: self.port,
+            user: self.user.clone(),
+            password: self.password.clone(),
+            game_id: self.game_id.clone(),
+            hash_mb: self.hash_mb,
             resign_score: self.resign_score,
-            keep_alive:   self.keep_alive,
-            max_depth:    self.max_depth,
+            keep_alive: self.keep_alive,
+            max_depth: self.max_depth,
         }
     }
 }

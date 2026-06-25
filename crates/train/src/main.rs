@@ -24,29 +24,52 @@ use trainer::Trainer;
 // ---- CLI argument parsing ----
 
 struct Args {
-    games_dir:   PathBuf,
-    output:      PathBuf,
-    epochs:      usize,
-    sample:      usize, // sample every N plies per game
-    best_every:  usize, // save best-loss checkpoint every N games (0 = disabled)
+    games_dir: PathBuf,
+    output: PathBuf,
+    epochs: usize,
+    sample: usize,     // sample every N plies per game
+    best_every: usize, // save best-loss checkpoint every N games (0 = disabled)
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    let mut games_dir  = None;
-    let mut output     = PathBuf::from("weights.bin");
-    let mut epochs     = 3usize;
-    let mut sample     = 4usize;
+    let mut games_dir = None;
+    let mut output = PathBuf::from("weights.bin");
+    let mut epochs = 3usize;
+    let mut sample = 4usize;
     let mut best_every = 0usize;
     let mut i = 0;
 
     while i < argv.len() {
         match argv[i].as_str() {
-            "--games"      => { i += 1; games_dir  = argv.get(i).map(PathBuf::from); }
-            "--output"     => { i += 1; if let Some(s) = argv.get(i) { output = PathBuf::from(s); } }
-            "--epochs"     => { i += 1; if let Some(s) = argv.get(i) { epochs = s.parse().unwrap_or(3); } }
-            "--sample"     => { i += 1; if let Some(s) = argv.get(i) { sample = s.parse().unwrap_or(4); } }
-            "--best-every" => { i += 1; if let Some(s) = argv.get(i) { best_every = s.parse().unwrap_or(0); } }
+            "--games" => {
+                i += 1;
+                games_dir = argv.get(i).map(PathBuf::from);
+            }
+            "--output" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    output = PathBuf::from(s);
+                }
+            }
+            "--epochs" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    epochs = s.parse().unwrap_or(3);
+                }
+            }
+            "--sample" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    sample = s.parse().unwrap_or(4);
+                }
+            }
+            "--best-every" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    best_every = s.parse().unwrap_or(0);
+                }
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -104,7 +127,11 @@ fn collect_csa_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
 fn main() {
     let args = match parse_args() {
         Ok(a) => a,
-        Err(e) => { eprintln!("error: {e}"); print_usage(); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("error: {e}");
+            print_usage();
+            std::process::exit(1);
+        }
     };
 
     let files = collect_csa_files(&args.games_dir);
@@ -116,7 +143,8 @@ fn main() {
 
     // Parse games once and cache (avoids re-parsing every epoch)
     eprint!("Parsing games... ");
-    let games: Vec<_> = files.iter()
+    let games: Vec<_> = files
+        .iter()
         .filter_map(|p| fs::read_to_string(p).ok())
         .filter_map(|text| parse_csa(&text))
         .collect();
@@ -142,7 +170,10 @@ fn main() {
             let game_num = i + 1;
             if game_num % 10_000 == 0 {
                 let loss = trainer.avg_loss();
-                eprintln!("  epoch {epoch}  game {:>7}  avg_loss = {:.4}", game_num, loss);
+                eprintln!(
+                    "  epoch {epoch}  game {:>7}  avg_loss = {:.4}",
+                    game_num, loss
+                );
 
                 // Save best-loss checkpoint if loss improved
                 if args.best_every > 0 && game_num % args.best_every == 0 && loss < best_loss {
@@ -150,21 +181,27 @@ fn main() {
                     let best_path = args.output.with_extension("best.bin");
                     let w = trainer.weights.to_nnue_weights();
                     match save_weights(&w, &best_path) {
-                        Ok(_)  => eprintln!("  *** best checkpoint (loss={loss:.4}) → {best_path:?}"),
+                        Ok(_) => {
+                            eprintln!("  *** best checkpoint (loss={loss:.4}) → {best_path:?}")
+                        }
                         Err(e) => eprintln!("  best checkpoint save failed: {e}"),
                     }
                 }
             }
         }
 
-        eprintln!("Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}",
-            args.epochs, trainer.avg_loss(), trainer.total_count);
+        eprintln!(
+            "Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}",
+            args.epochs,
+            trainer.avg_loss(),
+            trainer.total_count
+        );
 
         // Save checkpoint after each epoch
         let checkpoint = args.output.with_extension(format!("epoch{epoch}.bin"));
         let w = trainer.weights.to_nnue_weights();
         match save_weights(&w, &checkpoint) {
-            Ok(_)  => eprintln!("  checkpoint saved → {:?}", checkpoint),
+            Ok(_) => eprintln!("  checkpoint saved → {:?}", checkpoint),
             Err(e) => eprintln!("  checkpoint save failed: {e}"),
         }
     }
@@ -172,7 +209,10 @@ fn main() {
     // Save final weights
     let w = trainer.weights.to_nnue_weights();
     match save_weights(&w, &args.output) {
-        Ok(_)  => eprintln!("Final weights saved → {:?}", args.output),
-        Err(e) => { eprintln!("Save failed: {e}"); std::process::exit(1); }
+        Ok(_) => eprintln!("Final weights saved → {:?}", args.output),
+        Err(e) => {
+            eprintln!("Save failed: {e}");
+            std::process::exit(1);
+        }
     }
 }

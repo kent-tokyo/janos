@@ -8,11 +8,7 @@
 //!   - Time lines (`T<n>`), comment lines (`'...`) and metadata (`$...`) are ignored
 
 use shogi_core::{
-    board::Board,
-    movegen::generate_legal_moves,
-    mv::Move,
-    piece::PieceKind,
-    square::Square,
+    board::Board, movegen::generate_legal_moves, mv::Move, piece::PieceKind, square::Square,
 };
 
 // ---- Public types ----
@@ -28,7 +24,7 @@ pub enum GameResult {
 #[derive(Debug)]
 pub struct CsaGame {
     /// The game moves as legal `Move` values starting from `Board::startpos()`.
-    pub moves:  Vec<Move>,
+    pub moves: Vec<Move>,
     pub result: GameResult,
 }
 
@@ -37,14 +33,17 @@ pub struct CsaGame {
 /// Parse a CSA text string.  Returns `None` if the game is unplayable
 /// (illegal move, board setup not supported, etc.).
 pub fn parse_csa(text: &str) -> Option<CsaGame> {
-    let mut moves  = Vec::new();
+    let mut moves = Vec::new();
     let mut result = GameResult::Unknown;
-    let mut board  = Board::startpos();
+    let mut board = Board::startpos();
 
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('\'') || line.starts_with('$')
-            || line.starts_with('V') || line.starts_with('N')
+        if line.is_empty()
+            || line.starts_with('\'')
+            || line.starts_with('$')
+            || line.starts_with('V')
+            || line.starts_with('N')
             || line.starts_with('T')
         {
             continue;
@@ -90,12 +89,12 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
             let bytes = line.as_bytes();
             let from_file = bytes[1] - b'0';
             let from_rank = bytes[2] - b'0';
-            let to_file   = bytes[3] - b'0';
-            let to_rank   = bytes[4] - b'0';
+            let to_file = bytes[3] - b'0';
+            let to_rank = bytes[4] - b'0';
             let piece_str = &line[5..7];
 
             let to_sq = csa_square(to_file, to_rank)?;
-            let kind  = csa_piece(piece_str)?;
+            let kind = csa_piece(piece_str)?;
 
             let from = if from_file == 0 && from_rank == 0 {
                 None // drop
@@ -110,7 +109,9 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
         }
     }
 
-    if moves.is_empty() { return None; }
+    if moves.is_empty() {
+        return None;
+    }
     Some(CsaGame { moves, result })
 }
 
@@ -118,7 +119,9 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
 
 /// Convert CSA coordinates (file 1-9, rank 1-9) to `Square`.
 fn csa_square(file: u8, rank: u8) -> Option<Square> {
-    if file == 0 || file > 9 || rank == 0 || rank > 9 { return None; }
+    if file == 0 || file > 9 || rank == 0 || rank > 9 {
+        return None;
+    }
     // CSA file 9 = leftmost from Black's view = file_0=0
     Some(Square::from_fr(9 - file, rank - 1))
 }
@@ -146,10 +149,17 @@ fn csa_piece(s: &str) -> Option<PieceKind> {
 
 /// Find the legal move matching (from, to, piece after move).
 /// `kind` in CSA is the piece kind AFTER the move (promoted if promotion occurred).
-fn find_legal_move(board: &mut Board, from: Option<Square>, to: Square, kind_after: PieceKind) -> Option<Move> {
+fn find_legal_move(
+    board: &mut Board,
+    from: Option<Square>,
+    to: Square,
+    kind_after: PieceKind,
+) -> Option<Move> {
     let legals = generate_legal_moves(board);
     legals.into_iter().find(|m| {
-        if m.from != from || m.to != to { return false; }
+        if m.from != from || m.to != to {
+            return false;
+        }
         // `kind_after` is the resulting kind; compute expected result
         let result_kind = if m.promote {
             m.piece_kind.promoted()

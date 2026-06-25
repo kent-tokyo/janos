@@ -4,9 +4,9 @@
 
 **JANOS** = *Jet-speed Ancestry Node Optimizer of Shogi*
 
-Rust-based speculative shogi AI targeting world-class strength (Suisho / Hisui tier).
+Rust-based shogi AI engine exploring speculative parallel search and NNUE-style evaluation. Aiming for competitive strength on floodgate.
 
-The core bet: Rust's ownership and type system make it possible to implement **hyper-aggressive speculative parallel search with safe instant-cancel** — something practically impossible to ship correctly in C++.
+Rust's ownership and type system make it possible to implement **speculative parallel search with safe instant-cancel** — a pattern difficult to implement safely in C++.
 
 ## Name Origin
 
@@ -117,11 +117,16 @@ cargo run --release -p match-runner -- \
 cargo run --release -p train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
-## Agent Roles
+## Benchmarks
 
-See [AGENTS.md](AGENTS.md) for the multi-agent collaboration model used to develop this codebase.
+Measured on Apple M4 Pro (`cargo build --release`, `target-cpu=native`).
 
-## Task Tracking
+| Metric | Value |
+|--------|-------|
+| Legal move generation (startpos) | ~5.5 µs / call |
+| NNUE evaluate (startpos) | ~18.7 ns / call |
+| Search depth 4 (startpos) | ~3.6 ms |
+| Search NPS with NNUE (10 s time control) | ~1.1M nps, depth 13 |
+| Test suite | 15 tests pass |
 
-See [tasks/todo.md](tasks/todo.md) for the full milestone checklist.  
-See [tasks/lessons.md](tasks/lessons.md) for architectural lessons learned.
+floodgate match results: pending (engine currently connecting as `janos_20260623`).

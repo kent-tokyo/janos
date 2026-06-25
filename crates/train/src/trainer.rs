@@ -1,4 +1,5 @@
 //! NNUE training loop — supervised learning from CSA game results.
+#![allow(clippy::needless_range_loop)] // index-based loops match matrix layout; don't change
 //!
 //! # Architecture
 //!   Input → FT (L1=256, per perspective) → ClippedReLU → L2 (32) → ClippedReLU → Out
@@ -14,7 +15,7 @@
 use shogi_core::{
     board::Board,
     color::Color,
-    nnue::{NnueWeights, feature_index, hand_feature_index, INPUT, L1, L2},
+    nnue::{INPUT, L1, L2, NnueWeights, feature_index, hand_feature_index},
     piece::PieceKind,
 };
 
@@ -23,20 +24,26 @@ use crate::csa::{CsaGame, GameResult};
 // ---- Training weight container ----
 
 pub struct TrainWeights {
-    ft:       Vec<f32>, // INPUT × L1  (row-major: index = feat*L1 + neuron)
-    ft_bias:  Vec<f32>, // L1
-    l2:       Vec<f32>, // 2*L1 × L2  (row-major: index = input_j*L2 + output_o)
-    l2_bias:  Vec<f32>, // L2
-    out:      Vec<f32>, // L2
+    ft: Vec<f32>,      // INPUT × L1  (row-major: index = feat*L1 + neuron)
+    ft_bias: Vec<f32>, // L1
+    l2: Vec<f32>,      // 2*L1 × L2  (row-major: index = input_j*L2 + output_o)
+    l2_bias: Vec<f32>, // L2
+    out: Vec<f32>,     // L2
     out_bias: f32,
 
     // Adam first/second moments
-    ft_m:      Vec<f32>, ft_v:      Vec<f32>,
-    bias_m:    Vec<f32>, bias_v:    Vec<f32>,
-    l2_m:      Vec<f32>, l2_v:      Vec<f32>,
-    l2bias_m:  Vec<f32>, l2bias_v:  Vec<f32>,
-    out_m:     Vec<f32>, out_v:     Vec<f32>,
-    obias_m:   f32,      obias_v:   f32,
+    ft_m: Vec<f32>,
+    ft_v: Vec<f32>,
+    bias_m: Vec<f32>,
+    bias_v: Vec<f32>,
+    l2_m: Vec<f32>,
+    l2_v: Vec<f32>,
+    l2bias_m: Vec<f32>,
+    l2bias_v: Vec<f32>,
+    out_m: Vec<f32>,
+    out_v: Vec<f32>,
+    obias_m: f32,
+    obias_v: f32,
 
     step: u64,
 }
@@ -44,23 +51,29 @@ pub struct TrainWeights {
 impl TrainWeights {
     /// Zero-initialised weights.
     pub fn new() -> Self {
-        let ft_len  = INPUT * L1;
-        let l2_len  = 2 * L1 * L2;
+        let ft_len = INPUT * L1;
+        let l2_len = 2 * L1 * L2;
         let out_len = L2;
         TrainWeights {
-            ft:       vec![0.0; ft_len],
-            ft_bias:  vec![0.0; L1],
-            l2:       vec![0.0; l2_len],
-            l2_bias:  vec![0.0; L2],
-            out:      vec![0.0; out_len],
+            ft: vec![0.0; ft_len],
+            ft_bias: vec![0.0; L1],
+            l2: vec![0.0; l2_len],
+            l2_bias: vec![0.0; L2],
+            out: vec![0.0; out_len],
             out_bias: 0.0,
 
-            ft_m:     vec![0.0; ft_len],  ft_v:     vec![0.0; ft_len],
-            bias_m:   vec![0.0; L1],      bias_v:   vec![0.0; L1],
-            l2_m:     vec![0.0; l2_len],  l2_v:     vec![0.0; l2_len],
-            l2bias_m: vec![0.0; L2],      l2bias_v: vec![0.0; L2],
-            out_m:    vec![0.0; out_len],  out_v:   vec![0.0; out_len],
-            obias_m: 0.0,                  obias_v: 0.0,
+            ft_m: vec![0.0; ft_len],
+            ft_v: vec![0.0; ft_len],
+            bias_m: vec![0.0; L1],
+            bias_v: vec![0.0; L1],
+            l2_m: vec![0.0; l2_len],
+            l2_v: vec![0.0; l2_len],
+            l2bias_m: vec![0.0; L2],
+            l2bias_v: vec![0.0; L2],
+            out_m: vec![0.0; out_len],
+            out_v: vec![0.0; out_len],
+            obias_m: 0.0,
+            obias_v: 0.0,
             step: 0,
         }
     }
@@ -92,26 +105,33 @@ impl TrainWeights {
         let mut out = [0.0f32; L2];
         out.copy_from_slice(&self.out);
 
-        NnueWeights { ft, ft_bias, l2, l2_bias, out, out_bias: self.out_bias }
+        NnueWeights {
+            ft,
+            ft_bias,
+            l2,
+            l2_bias,
+            out,
+            out_bias: self.out_bias,
+        }
     }
 }
 
 // ---- Trainer ----
 
 pub struct Trainer {
-    pub weights:     TrainWeights,
-    pub total_loss:  f64,
+    pub weights: TrainWeights,
+    pub total_loss: f64,
     pub total_count: u64,
-    pub lr:          f32,
+    pub lr: f32,
 }
 
 impl Trainer {
     pub fn new() -> Self {
         Trainer {
-            weights:     TrainWeights::new(),
-            total_loss:  0.0,
+            weights: TrainWeights::new(),
+            total_loss: 0.0,
             total_count: 0,
-            lr:          0.001,
+            lr: 0.001,
         }
     }
 
@@ -128,7 +148,11 @@ impl Trainer {
         for (ply, &mv) in game.moves.iter().enumerate() {
             if ply % sample_every == 0 {
                 let stm = board.side_to_move;
-                let teacher = if stm == Color::Black { black_result } else { -black_result };
+                let teacher = if stm == Color::Black {
+                    black_result
+                } else {
+                    -black_result
+                };
                 self.train_position(&board, teacher * 600.0);
             }
             board.do_move(mv);
@@ -138,43 +162,43 @@ impl Trainer {
     /// One SGD step on a single position.
     fn train_position(&mut self, board: &Board, teacher: f32) {
         let stm = board.side_to_move;
-        let w   = &self.weights;
+        let w = &self.weights;
 
         // ── Forward pass ──────────────────────────────────────────────────────
 
         // FT accumulation
-        let mut acc_us   = vec![0.0f32; L1];
-        let mut acc_them = vec![0.0f32; L1];
-        for i in 0..L1 {
-            acc_us  [i] = w.ft_bias[i];
-            acc_them[i] = w.ft_bias[i];
-        }
+        let mut acc_us = w.ft_bias.clone();
+        let mut acc_them = acc_us.clone();
 
-        let active_us   = active_features(board, stm);
+        let active_us = active_features(board, stm);
         let active_them = active_features(board, stm.flip());
 
         for feat in &active_us {
             let base = feat * L1;
-            for j in 0..L1 { acc_us[j] += w.ft[base + j]; }
+            for j in 0..L1 {
+                acc_us[j] += w.ft[base + j];
+            }
         }
         for feat in &active_them {
             let base = feat * L1;
-            for j in 0..L1 { acc_them[j] += w.ft[base + j]; }
+            for j in 0..L1 {
+                acc_them[j] += w.ft[base + j];
+            }
         }
 
         // FT ClippedReLU [0, 127]
-        let relu_us:   Vec<f32> = acc_us  .iter().map(|&x| x.clamp(0.0, 127.0)).collect();
+        let relu_us: Vec<f32> = acc_us.iter().map(|&x| x.clamp(0.0, 127.0)).collect();
         let relu_them: Vec<f32> = acc_them.iter().map(|&x| x.clamp(0.0, 127.0)).collect();
 
         // L2 accumulation
-        let mut l2_acc = w.l2_bias.clone();  // Vec<f32> len=L2
+        let mut l2_acc = w.l2_bias.clone(); // Vec<f32> len=L2
         for j in 0..L1 {
-            let a = relu_us  [j];
+            let a = relu_us[j];
             let b = relu_them[j];
-            let base_us   = j * L2;
+            let base_us = j * L2;
             let base_them = (L1 + j) * L2;
             for o in 0..L2 {
-                l2_acc[o] += a * w.l2[base_us   + o];
+                l2_acc[o] += a * w.l2[base_us + o];
                 l2_acc[o] += b * w.l2[base_them + o];
             }
         }
@@ -184,27 +208,31 @@ impl Trainer {
 
         // Output
         let mut output = w.out_bias;
-        for o in 0..L2 { output += relu_l2[o] * w.out[o]; }
+        for o in 0..L2 {
+            output += relu_l2[o] * w.out[o];
+        }
         let score = output / 64.0;
 
         // ── Loss ──────────────────────────────────────────────────────────────
 
         let err = score - teacher;
-        self.total_loss  += (err * err) as f64;
+        self.total_loss += (err * err) as f64;
         self.total_count += 1;
 
         // ── Backward pass ─────────────────────────────────────────────────────
 
-        let d_score  = 2.0 * err;
+        let d_score = 2.0 * err;
         let d_output = d_score / 64.0;
 
         // Output layer gradients
         let mut d_out = vec![0.0f32; L2];
-        for o in 0..L2 { d_out[o] = d_output * relu_l2[o]; }
+        for o in 0..L2 {
+            d_out[o] = d_output * relu_l2[o];
+        }
         let d_out_bias = d_output;
 
         // Backprop through L2 ClippedReLU
-        let mut d_l2_acc = vec![0.0f32; L2];
+        let mut d_l2_acc = [0.0f32; L2];
         for o in 0..L2 {
             if l2_acc[o] > 0.0 && l2_acc[o] < 127.0 {
                 d_l2_acc[o] = d_output * self.weights.out[o];
@@ -212,67 +240,121 @@ impl Trainer {
         }
 
         // L2 weight gradients and propagate to FT
-        let mut d_l2        = vec![0.0f32; 2 * L1 * L2];
-        let mut d_l2_bias   = vec![0.0f32; L2];
-        let mut d_relu_us   = vec![0.0f32; L1];
+        let mut d_l2 = vec![0.0f32; 2 * L1 * L2];
+        let mut d_l2_bias = vec![0.0f32; L2];
+        let mut d_relu_us = vec![0.0f32; L1];
         let mut d_relu_them = vec![0.0f32; L1];
 
         for j in 0..L1 {
-            let base_us   = j * L2;
+            let base_us = j * L2;
             let base_them = (L1 + j) * L2;
             for o in 0..L2 {
                 let g = d_l2_acc[o];
-                d_l2[base_us   + o] += g * relu_us  [j];
+                d_l2[base_us + o] += g * relu_us[j];
                 d_l2[base_them + o] += g * relu_them[j];
-                d_relu_us  [j] += g * self.weights.l2[base_us   + o];
+                d_relu_us[j] += g * self.weights.l2[base_us + o];
                 d_relu_them[j] += g * self.weights.l2[base_them + o];
             }
         }
-        for o in 0..L2 { d_l2_bias[o] = d_l2_acc[o]; }
+        d_l2_bias[..L2].copy_from_slice(&d_l2_acc[..L2]);
 
         // Backprop through FT ClippedReLU
-        let mut d_acc_us   = vec![0.0f32; L1];
+        let mut d_acc_us = vec![0.0f32; L1];
         let mut d_acc_them = vec![0.0f32; L1];
         for j in 0..L1 {
-            if acc_us  [j] > 0.0 && acc_us  [j] < 127.0 { d_acc_us  [j] = d_relu_us  [j]; }
-            if acc_them[j] > 0.0 && acc_them[j] < 127.0 { d_acc_them[j] = d_relu_them[j]; }
+            if acc_us[j] > 0.0 && acc_us[j] < 127.0 {
+                d_acc_us[j] = d_relu_us[j];
+            }
+            if acc_them[j] > 0.0 && acc_them[j] < 127.0 {
+                d_acc_them[j] = d_relu_them[j];
+            }
         }
 
         // FT weight gradients (sparse)
-        let mut d_ft   = vec![0.0f32; INPUT * L1];
+        let mut d_ft = vec![0.0f32; INPUT * L1];
         let mut d_bias = vec![0.0f32; L1];
 
         for feat in &active_us {
             let base = feat * L1;
-            for j in 0..L1 { d_ft[base + j] += d_acc_us[j]; }
+            for j in 0..L1 {
+                d_ft[base + j] += d_acc_us[j];
+            }
         }
         for feat in &active_them {
             let base = feat * L1;
-            for j in 0..L1 { d_ft[base + j] += d_acc_them[j]; }
+            for j in 0..L1 {
+                d_ft[base + j] += d_acc_them[j];
+            }
         }
-        for j in 0..L1 { d_bias[j] = d_acc_us[j] + d_acc_them[j]; }
+        for j in 0..L1 {
+            d_bias[j] = d_acc_us[j] + d_acc_them[j];
+        }
 
         // ── Adam update ───────────────────────────────────────────────────────
 
         self.weights.step += 1;
-        let t  = self.weights.step;
+        let t = self.weights.step;
         let lr = self.lr;
 
-        adam_update_slice(&mut self.weights.ft,      &mut self.weights.ft_m,     &mut self.weights.ft_v,     &d_ft,     lr, t);
-        adam_update_slice(&mut self.weights.ft_bias, &mut self.weights.bias_m,   &mut self.weights.bias_v,   &d_bias,   lr, t);
-        adam_update_slice(&mut self.weights.l2,      &mut self.weights.l2_m,     &mut self.weights.l2_v,     &d_l2,     lr, t);
-        adam_update_slice(&mut self.weights.l2_bias, &mut self.weights.l2bias_m, &mut self.weights.l2bias_v, &d_l2_bias,lr, t);
-        adam_update_slice(&mut self.weights.out,     &mut self.weights.out_m,    &mut self.weights.out_v,    &d_out,    lr, t);
-        adam_update_scalar(&mut self.weights.out_bias, &mut self.weights.obias_m, &mut self.weights.obias_v, d_out_bias, lr, t);
+        adam_update_slice(
+            &mut self.weights.ft,
+            &mut self.weights.ft_m,
+            &mut self.weights.ft_v,
+            &d_ft,
+            lr,
+            t,
+        );
+        adam_update_slice(
+            &mut self.weights.ft_bias,
+            &mut self.weights.bias_m,
+            &mut self.weights.bias_v,
+            &d_bias,
+            lr,
+            t,
+        );
+        adam_update_slice(
+            &mut self.weights.l2,
+            &mut self.weights.l2_m,
+            &mut self.weights.l2_v,
+            &d_l2,
+            lr,
+            t,
+        );
+        adam_update_slice(
+            &mut self.weights.l2_bias,
+            &mut self.weights.l2bias_m,
+            &mut self.weights.l2bias_v,
+            &d_l2_bias,
+            lr,
+            t,
+        );
+        adam_update_slice(
+            &mut self.weights.out,
+            &mut self.weights.out_m,
+            &mut self.weights.out_v,
+            &d_out,
+            lr,
+            t,
+        );
+        adam_update_scalar(
+            &mut self.weights.out_bias,
+            &mut self.weights.obias_m,
+            &mut self.weights.obias_v,
+            d_out_bias,
+            lr,
+            t,
+        );
     }
 
     pub fn avg_loss(&self) -> f64 {
-        if self.total_count == 0 { return 0.0; }
+        if self.total_count == 0 {
+            return 0.0;
+        }
         self.total_loss / self.total_count as f64
     }
 
     pub fn reset_stats(&mut self) {
-        self.total_loss  = 0.0;
+        self.total_loss = 0.0;
         self.total_count = 0;
     }
 }
@@ -281,14 +363,29 @@ impl Trainer {
 
 fn active_features(board: &Board, perspective: Color) -> Vec<usize> {
     const ALL_KINDS: [PieceKind; 14] = [
-        PieceKind::Fu, PieceKind::Kyou, PieceKind::Kei, PieceKind::Gin,
-        PieceKind::Kin, PieceKind::Kaku, PieceKind::Hisha, PieceKind::Ou,
-        PieceKind::Tokin, PieceKind::Narikyo, PieceKind::Narikei, PieceKind::Narigin,
-        PieceKind::Uma, PieceKind::Ryu,
+        PieceKind::Fu,
+        PieceKind::Kyou,
+        PieceKind::Kei,
+        PieceKind::Gin,
+        PieceKind::Kin,
+        PieceKind::Kaku,
+        PieceKind::Hisha,
+        PieceKind::Ou,
+        PieceKind::Tokin,
+        PieceKind::Narikyo,
+        PieceKind::Narikei,
+        PieceKind::Narigin,
+        PieceKind::Uma,
+        PieceKind::Ryu,
     ];
     const HAND_KINDS: [PieceKind; 7] = [
-        PieceKind::Fu, PieceKind::Kyou, PieceKind::Kei, PieceKind::Gin,
-        PieceKind::Kin, PieceKind::Kaku, PieceKind::Hisha,
+        PieceKind::Fu,
+        PieceKind::Kyou,
+        PieceKind::Kei,
+        PieceKind::Gin,
+        PieceKind::Kin,
+        PieceKind::Kaku,
+        PieceKind::Hisha,
     ];
 
     let mut features = Vec::with_capacity(60);
@@ -315,7 +412,14 @@ fn active_features(board: &Board, perspective: Color) -> Vec<usize> {
 
 // ---- Adam helpers ----
 
-fn adam_update_slice(params: &mut [f32], m: &mut [f32], v: &mut [f32], grads: &[f32], lr: f32, t: u64) {
+fn adam_update_slice(
+    params: &mut [f32],
+    m: &mut [f32],
+    v: &mut [f32],
+    grads: &[f32],
+    lr: f32,
+    t: u64,
+) {
     for i in 0..params.len() {
         adam_update_scalar(&mut params[i], &mut m[i], &mut v[i], grads[i], lr, t);
     }
