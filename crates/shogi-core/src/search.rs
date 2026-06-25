@@ -549,7 +549,7 @@ fn alpha_beta(
         board.undo_null_move(null_tok);
 
         if null_score >= beta {
-            return beta;
+            return null_score; // fail-soft: tighter lower bound than beta
         }
     }
 
@@ -1058,8 +1058,10 @@ fn lmr_reduce(
     if tt_mv.is_some_and(|t| t == m) { return 0; }
     if killers[0].is_some_and(|k| k == m) { return 0; }
     if killers[1].is_some_and(|k| k == m) { return 0; }
-    // Simple reduction formula: 1 + move_idx / 6
-    1 + (move_idx / 6) as u32
+    // Depth × move-index scaling: conservative at shallow depth, more aggressive deeper.
+    // Formula: floor(1 + ln(depth) * ln(move_idx) / 2)
+    let r = 1.0 + (depth as f32).ln() * (move_idx as f32).ln() / 2.0;
+    r as u32
 }
 
 fn order_moves(
