@@ -1,5 +1,7 @@
 # Janos（コードネーム：Paradigm）
 
+[English](README.md)
+
 **JANOS** = *Jet-speed Ancestry Node Optimizer of Shogi*
 
 世界最高峰の将棋AI（水匠・翡翠クラス）を超えることを目標とした、Rust製の投機的並列将棋AIエンジンです。

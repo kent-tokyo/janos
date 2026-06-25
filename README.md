@@ -1,5 +1,7 @@
 # Janos
 
+[日本語](README_ja.md)
+
 **JANOS** = *Jet-speed Ancestry Node Optimizer of Shogi*
 
 Rust-based speculative shogi AI targeting world-class strength (Suisho / Hisui tier).
