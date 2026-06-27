@@ -1,5 +1,5 @@
 [package]
-name = "sekirei-usi"
+name = "sekirei"
 version = "0.1.0"
 edition = "2024"
 description = "USI shogi engine binary (Sekirei)"
