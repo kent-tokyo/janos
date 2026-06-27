@@ -66,6 +66,7 @@ fn main() {
                 println!("id name {ENGINE_NAME}");
                 println!("id author {ENGINE_AUTHOR}");
                 println!("option name Hash type spin default {DEFAULT_HASH_MB} min 1 max 2048");
+                println!("option name Threads type spin default 0 min 0 max 512");
                 println!("option name EvalFile type string default ");
                 println!("usiok");
                 stdout.lock().flush().ok();
@@ -92,6 +93,13 @@ fn main() {
                 {
                     hash_mb = mb;
                     searcher = make_searcher(hash_mb);
+                } else if parts.get(1) == Some(&"Threads") {
+                    if let Some(n) = parts.get(3).and_then(|s| s.parse::<usize>().ok()) {
+                        // ponytail: build_global silently fails if already init'd; that's fine
+                        let _ = rayon::ThreadPoolBuilder::new()
+                            .num_threads(n)
+                            .build_global();
+                    }
                 } else if parts.get(1) == Some(&"EvalFile") {
                     // value may contain spaces (e.g. paths with spaces)
                     if let Some(val) = rest.split_once("value ").map(|(_, v)| v.trim()) {

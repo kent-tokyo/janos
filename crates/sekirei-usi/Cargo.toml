@@ -12,3 +12,4 @@ path = "src/main.rs"
 
 [dependencies]
 sekirei-core = { path = "../sekirei-core", version = "0.2.0" }
+rayon = "1"
