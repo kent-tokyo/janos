@@ -11,4 +11,4 @@ name = "sekirei-match"
 path = "src/main.rs"
 
 [dependencies]
-shogi-core = { path = "../shogi-core", package = "sekirei-core" }
+shogi-core = { path = "../sekirei-core", package = "sekirei-core" }

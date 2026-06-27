@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/kent-tokyo/sekirei"
 
 [dependencies]
-shogi-core = { path = "../shogi-core", package = "sekirei-core" }
+shogi-core = { path = "../sekirei-core", package = "sekirei-core" }
 rayon = "1"
 
 [dev-dependencies]

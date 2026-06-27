@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "crates/shogi-core",
-    "crates/bench",
-    "crates/usi",
-    "crates/train",
-    "crates/csa",
-    "crates/match-runner",
+    "crates/sekirei-core",
+    "crates/sekirei-bench",
+    "crates/sekirei-usi",
+    "crates/sekirei-train",
+    "crates/sekirei-csa",
+    "crates/sekirei-match-runner",
 ]
 resolver = "2"
 
