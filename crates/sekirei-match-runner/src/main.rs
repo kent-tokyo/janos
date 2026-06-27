@@ -43,6 +43,7 @@ struct Args {
     max_moves: usize,
     positions_file: Option<PathBuf>,
     json_file: Option<PathBuf>,
+    games_per_position: Option<usize>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -57,6 +58,7 @@ fn parse_args() -> Result<Args, String> {
     let mut max_mv = 512usize;
     let mut positions_file = None;
     let mut json_file = None;
+    let mut games_per_position = None;
     let mut i = 0;
 
     while i < argv.len() {
@@ -113,6 +115,10 @@ fn parse_args() -> Result<Args, String> {
                 i += 1;
                 json_file = Some(PathBuf::from(get(&argv, i)?));
             }
+            "--games-per-position" => {
+                i += 1;
+                games_per_position = get(&argv, i)?.parse().ok();
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -133,6 +139,7 @@ fn parse_args() -> Result<Args, String> {
         max_moves: max_mv,
         positions_file,
         json_file,
+        games_per_position,
     })
 }
 
@@ -154,6 +161,9 @@ fn print_usage() {
     eprintln!("  --output <dir>       write USI game records to this directory");
     eprintln!("  --max-moves <n>      max moves before declaring draw (default: 512)");
     eprintln!("  --positions <file>   file with one SFEN per line for random openings");
+    eprintln!(
+        "  --games-per-position <n>  play N games per position (covers all; overrides --games)"
+    );
     eprintln!("  --json <file>        write result summary as JSON");
 }
 
@@ -348,9 +358,17 @@ fn main() {
 
     println!("Engine1: {}", e1.name);
     println!("Engine2: {}", e2.name);
-    println!("Games: {}  Byoyomi: {}ms", args.games, args.byoyomi_ms);
     if !positions.is_empty() {
         println!("Opening positions: {} SFENs", positions.len());
+    }
+    if let Some(gpp) = args.games_per_position {
+        println!(
+            "Mode: cover-all  ({} positions × {gpp} games = {} total)",
+            positions.len().max(1),
+            positions.len().max(1) * gpp
+        );
+    } else {
+        println!("Games: {}  Byoyomi: {}ms", args.games, args.byoyomi_ms);
     }
     println!();
 
@@ -358,13 +376,35 @@ fn main() {
     let mut e2_wins = 0u32;
     let mut draws = 0u32;
 
-    for game_num in 1..=args.games {
-        let e1_is_black = game_num % 2 == 1;
-        let start_pos = if positions.is_empty() {
-            "startpos".to_string()
+    // Build the game list: cover-all mode or random-sample mode
+    let game_list: Vec<(bool, String)> = if let Some(gpp) = args.games_per_position {
+        let pos_list = if positions.is_empty() {
+            vec!["startpos".to_string()]
         } else {
-            rng.pick(&positions).to_string()
+            positions.clone()
         };
+        pos_list
+            .into_iter()
+            .flat_map(|pos| (0..gpp).map(move |g| (g % 2 == 0, pos.clone())))
+            .collect()
+    } else {
+        (1..=args.games)
+            .map(|game_num| {
+                let e1_is_black = game_num % 2 == 1;
+                let start_pos = if positions.is_empty() {
+                    "startpos".to_string()
+                } else {
+                    rng.pick(&positions).to_string()
+                };
+                (e1_is_black, start_pos)
+            })
+            .collect()
+    };
+
+    for (game_num, (e1_is_black, start_pos)) in
+        game_list.iter().enumerate().map(|(i, v)| (i + 1, v))
+    {
+        let (e1_is_black, start_pos) = (*e1_is_black, start_pos.as_str());
 
         let (outcome, moves, reason) = run_game(
             &mut e1,
@@ -372,7 +412,7 @@ fn main() {
             e1_is_black,
             args.byoyomi_ms,
             args.max_moves,
-            &start_pos,
+            start_pos,
         );
 
         let (e1_color, e2_color) = if e1_is_black {
