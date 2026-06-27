@@ -142,3 +142,25 @@ floodgate status: active testing; rating is currently volatile.
 Also セキレイ／鶺鴒, the Japanese word for wagtail — a small, nimble bird known for its quick,
 darting movement. The name reflects the engine's focus on fast, speculative
 search: committing to moves early, then correcting course as the tree develops.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
+- MIT license
+  ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you shall be dual licensed as above, without
+any additional terms or conditions.
+
+Sekirei is an original pure-Rust shogi engine. It does not include GPL-licensed
+engine code. Ideas and algorithms may be studied from prior art, but this
+project's implementation remains clean-room and compatible with its permissive
+license.
