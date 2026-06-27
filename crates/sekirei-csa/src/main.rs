@@ -35,7 +35,7 @@ fn main() {
         .find(|(a, _)| a == "--weights")
         .map(|(_, v)| v)
     {
-        match shogi_core::nnue::load_weights(Path::new(&path)) {
+        match sekirei_core::nnue::load_weights(Path::new(&path)) {
             Ok(()) => eprintln!("[csa] NNUE weights loaded from {path}"),
             Err(e) => eprintln!("[csa] weight load failed: {e}"),
         }

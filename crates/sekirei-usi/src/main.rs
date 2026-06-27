@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use shogi_core::{
+use sekirei_core::{
     board::Board,
     color::Color,
     nnue::load_weights,

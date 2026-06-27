@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use shogi_core::{
+use sekirei_core::{
     board::Board,
     eval::evaluate,
     movegen::generate_legal_moves,

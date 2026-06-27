@@ -10,4 +10,4 @@ repository = "https://github.com/kent-tokyo/sekirei"
 rayon = "1"
 
 [lib]
-name = "shogi_core"
+name = "sekirei_core"

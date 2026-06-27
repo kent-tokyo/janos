@@ -24,7 +24,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use shogi_core::tt::Tt;
+use sekirei_core::tt::Tt;
 
 const OPS_PER_THREAD: u64 = 5_000_000;
 const TT_MB: usize = 4; // fits in L3; removes DRAM-bandwidth noise
@@ -88,10 +88,10 @@ fn differential_tt(threads: usize) -> f64 {
                 } else {
                     tt.store(
                         hash,
-                        shogi_core::tt::TtEntry {
+                        sekirei_core::tt::TtEntry {
                             score: (hash & 0xFFFF) as i32 - 32768,
                             depth: ((hash >> 16) & 0x7F) as u8,
-                            bound: shogi_core::tt::Bound::Exact,
+                            bound: sekirei_core::tt::Bound::Exact,
                             mv: None,
                         },
                     );
@@ -119,10 +119,10 @@ fn differential_tt(threads: usize) -> f64 {
                 } else {
                     tt.store(
                         hash,
-                        shogi_core::tt::TtEntry {
+                        sekirei_core::tt::TtEntry {
                             score: (ctrl & 0xFFFF) as i32 - 32768,
                             depth: ((ctrl >> 16) & 0x7F) as u8,
-                            bound: shogi_core::tt::Bound::Exact,
+                            bound: sekirei_core::tt::Bound::Exact,
                             mv: None,
                         },
                     );

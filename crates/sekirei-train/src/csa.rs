@@ -7,7 +7,7 @@
 //!   - Result lines: `%TORYO`, `%CHUDAN`, `%JISHOGI`, `%ILLEGAL_MOVE`, `%TSUMI`
 //!   - Time lines (`T<n>`), comment lines (`'...`) and metadata (`$...`) are ignored
 
-use shogi_core::{
+use sekirei_core::{
     board::Board, movegen::generate_legal_moves, mv::Move, piece::PieceKind, square::Square,
 };
 
@@ -80,7 +80,7 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
             result = match line {
                 "%TORYO" => {
                     // The side that was about to move resigned → the other side won
-                    if board.side_to_move == shogi_core::color::Color::Black {
+                    if board.side_to_move == sekirei_core::color::Color::Black {
                         GameResult::WhiteWin
                     } else {
                         GameResult::BlackWin
@@ -88,7 +88,7 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
                 }
                 "%TSUMI" => {
                     // Checkmate delivered — the player who just moved won
-                    if board.side_to_move == shogi_core::color::Color::Black {
+                    if board.side_to_move == sekirei_core::color::Color::Black {
                         GameResult::WhiteWin // white just delivered mate; black to move but already mated
                     } else {
                         GameResult::BlackWin

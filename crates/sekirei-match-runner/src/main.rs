@@ -24,7 +24,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use engine::UsiEngine;
-use shogi_core::{
+use sekirei_core::{
     board::Board,
     movegen::generate_legal_moves,
     sfen::{move_from_usi, parse_position_cmd},

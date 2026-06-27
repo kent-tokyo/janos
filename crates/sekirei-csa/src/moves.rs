@@ -3,7 +3,7 @@
 //! CSA coordinate system: file 1-9 (right to left from Black's view),
 //! rank 1-9 (top to bottom). Drop: file=0, rank=0 → "00".
 
-use shogi_core::{
+use sekirei_core::{
     board::Board, color::Color, movegen::generate_legal_moves, mv::Move, piece::PieceKind,
     square::Square,
 };

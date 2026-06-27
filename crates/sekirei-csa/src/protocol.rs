@@ -12,7 +12,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use shogi_core::{
+use sekirei_core::{
     board::Board,
     color::Color,
     search::{SearchConfig, Searcher},
@@ -356,7 +356,7 @@ impl CsaClient {
 }
 
 struct ThinkResult {
-    move_made: Option<shogi_core::mv::Move>,
+    move_made: Option<sekirei_core::mv::Move>,
 }
 
 fn parse_game_end(line: &str) -> GameResult {

@@ -12,7 +12,7 @@
 //!
 //! FT weights are quantised to i16 at save time; L2/out stay f32.
 
-use shogi_core::{
+use sekirei_core::{
     board::Board,
     color::Color,
     nnue::{INPUT, L1, L2, NnueWeights, feature_index, hand_feature_index},

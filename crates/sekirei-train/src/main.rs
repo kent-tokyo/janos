@@ -16,7 +16,7 @@ mod trainer;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use shogi_core::nnue::save_weights;
+use sekirei_core::nnue::save_weights;
 
 use csa::parse_csa;
 use trainer::Trainer;
