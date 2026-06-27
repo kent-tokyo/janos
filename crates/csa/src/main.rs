@@ -22,6 +22,7 @@ use std::time::Duration;
 use protocol::{Config, CsaClient};
 
 fn main() {
+    let _ = dotenvy::dotenv();
     let config = parse_args().unwrap_or_else(|e| {
         eprintln!("error: {e}");
         print_usage();
@@ -130,9 +131,8 @@ fn parse_args() -> Result<Config, String> {
         i += 1;
     }
 
-    // SEKIREI_USER env var
     if cfg.user == "anonymous"
-        && let Ok(user) = std::env::var("SEKIREI_USER")
+        && let Ok(user) = std::env::var("FLLODGATE_ACCOUNT")
     {
         cfg.user = user;
     }
@@ -140,7 +140,7 @@ fn parse_args() -> Result<Config, String> {
     if let Some(t) = trip {
         cfg.password = format!("{},{}", cfg.game_id, t);
     } else if cfg.password == Config::default().password
-        && let Ok(t) = std::env::var("SEKIREI_TRIP")
+        && let Ok(t) = std::env::var("FLLODGATE_TRIP")
     {
         cfg.password = format!("{},{}", cfg.game_id, t);
     }

@@ -189,7 +189,7 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
         return Err(Error::new(
             ErrorKind::InvalidData,
             format!(
-                "bad magic — expected SEKIRW01, got {:?}. Old JANOSW02 weights need retraining.",
+                "bad magic — expected SEKIRW01, got {:?}. Weights from an older version need retraining.",
                 &data[..8]
             ),
         ));

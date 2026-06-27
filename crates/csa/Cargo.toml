@@ -9,3 +9,4 @@ path = "src/main.rs"
 
 [dependencies]
 shogi-core = { path = "../shogi-core" }
+dotenvy = "0.15"

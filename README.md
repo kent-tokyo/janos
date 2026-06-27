@@ -1,6 +1,6 @@
 # Sekirei
 
-[![CI](https://github.com/kent-tokyo/janos/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/janos/actions/workflows/ci.yml)
+[![CI](https://github.com/kent-tokyo/sekirei/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/sekirei/actions/workflows/ci.yml)
 
 [日本語](README_ja.md)
 
@@ -14,7 +14,7 @@ The project is motivated by how Rust's ownership model enables safe concurrent s
 ## Current Status
 
 - USI-compatible; works with ShogiGUI and similar GUIs
-- CSA client for floodgate (connected as `janos_20260623`; account rename pending)
+- CSA client for floodgate (account set via `FLLODGATE_ACCOUNT` in `.env`)
 - NNUE-style evaluation available; weights not bundled — train from CSA data or use material fallback
 - Floodgate rating is volatile (active testing)
 
