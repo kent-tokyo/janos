@@ -25,6 +25,7 @@ pub enum GameResult {
 pub struct CsaGame {
     /// The game moves as legal `Move` values starting from `Board::startpos()`.
     pub moves: Vec<Move>,
+    #[allow(dead_code)] // ponytail: kept for future result-based filtering
     pub result: GameResult,
     pub black_rate: Option<f32>,
     pub white_rate: Option<f32>,

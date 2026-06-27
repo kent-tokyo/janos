@@ -15,13 +15,14 @@
 use sekirei_core::{
     board::Board,
     color::Color,
+    movegen::is_in_check,
     nnue::{INPUT, L1, L2, NnueWeights, feature_index, hand_feature_index},
     piece::PieceKind,
     search::{SearchConfig, Searcher},
     tt::Tt,
 };
 
-use crate::csa::{CsaGame, GameResult};
+use crate::csa::CsaGame;
 
 // ---- Training weight container ----
 
@@ -144,25 +145,43 @@ impl Trainer {
     }
 
     /// Train on a single game.  Samples every `sample_every` plies.
-    pub fn train_game(&mut self, game: &CsaGame, sample_every: usize) {
-        let _black_result = match game.result {
-            GameResult::BlackWin => 1.0f32,
-            GameResult::WhiteWin => -1.0,
-            _ => 0.0,
-        };
-
+    pub fn train_game(
+        &mut self,
+        game: &CsaGame,
+        sample_every: usize,
+        quiet: bool,
+        min_ply: usize,
+        label_depth: u32,
+    ) {
         let mut board = Board::startpos();
 
         for (ply, &mv) in game.moves.iter().enumerate() {
-            if ply % sample_every == 0 {
-                let config = SearchConfig {
-                    max_depth: 1,
-                    time_limit: None,
-                };
-                let info = self.searcher.search(&mut board, config);
-                let teacher = (info.score as f32).clamp(-600.0, 600.0);
-                self.train_position(&board, teacher);
+            if ply < min_ply || ply % sample_every != 0 {
+                board.do_move(mv);
+                continue;
             }
+
+            if quiet {
+                // skip positions in check (tactically unstable)
+                if is_in_check(&board, board.side_to_move) {
+                    board.do_move(mv);
+                    continue;
+                }
+                // skip if next move is a capture (tactically unstable)
+                if board.piece_at(mv.to).is_some() {
+                    board.do_move(mv);
+                    continue;
+                }
+            }
+
+            let config = SearchConfig {
+                max_depth: label_depth,
+                time_limit: None,
+            };
+            let info = self.searcher.search(&mut board, config);
+            let teacher = (info.score as f32).clamp(-600.0, 600.0);
+            self.train_position(&board, teacher);
+
             board.do_move(mv);
         }
     }

@@ -30,6 +30,9 @@ struct Args {
     sample: usize,     // sample every N plies per game
     best_every: usize, // save best-loss checkpoint every N games (0 = disabled)
     min_rate: f32,     // minimum rating for both players (0 = no filter)
+    quiet: bool,       // skip check / capture positions
+    min_ply: usize,    // skip early-game plies
+    label_depth: u32,  // search depth for teacher label
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -40,6 +43,9 @@ fn parse_args() -> Result<Args, String> {
     let mut sample = 4usize;
     let mut best_every = 0usize;
     let mut min_rate = 1500.0f32;
+    let mut quiet = false;
+    let mut min_ply = 0usize;
+    let mut label_depth = 1u32;
     let mut i = 0;
 
     while i < argv.len() {
@@ -78,6 +84,21 @@ fn parse_args() -> Result<Args, String> {
                     min_rate = s.parse().unwrap_or(1500.0);
                 }
             }
+            "--quiet" => {
+                quiet = true;
+            }
+            "--min-ply" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    min_ply = s.parse().unwrap_or(0);
+                }
+            }
+            "--label-depth" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    label_depth = s.parse().unwrap_or(1);
+                }
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -94,6 +115,9 @@ fn parse_args() -> Result<Args, String> {
         sample,
         best_every,
         min_rate,
+        quiet,
+        min_ply,
+        label_depth,
     })
 }
 
@@ -108,6 +132,9 @@ fn print_usage() {
     eprintln!(
         "  --min-rate <r>      Minimum rating for both players (default: 1500, 0 = no filter)"
     );
+    eprintln!("  --quiet             Skip positions in check or where next move is a capture");
+    eprintln!("  --min-ply <n>       Skip the first N plies per game (default: 0)");
+    eprintln!("  --label-depth <n>   Search depth for teacher labels (default: 1)");
     eprintln!();
     eprintln!("Data: download floodgate archives from http://wdoor.c.u-tokyo.ac.jp/shogi/");
 }
@@ -184,7 +211,13 @@ fn main() {
         eprintln!("Epoch {epoch}/{} — lr = {:.6}", args.epochs, trainer.lr);
 
         for (i, game) in games.iter().enumerate() {
-            trainer.train_game(game, args.sample);
+            trainer.train_game(
+                game,
+                args.sample,
+                args.quiet,
+                args.min_ply,
+                args.label_depth,
+            );
 
             let game_num = i + 1;
             if game_num % 10_000 == 0 {
