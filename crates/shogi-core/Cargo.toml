@@ -1,7 +1,10 @@
 [package]
-name = "shogi-core"
+name = "sekirei-core"
 version = "0.1.0"
 edition = "2024"
+description = "Shogi engine core library — speculative parallel search and NNUE-style evaluation"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kent-tokyo/sekirei"
 
 [dependencies]
 rayon = "1"

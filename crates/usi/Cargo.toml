@@ -1,11 +1,14 @@
 [package]
-name = "usi"
+name = "sekirei-usi"
 version = "0.1.0"
 edition = "2024"
+description = "USI shogi engine binary (Sekirei)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kent-tokyo/sekirei"
 
 [[bin]]
 name = "sekirei"
 path = "src/main.rs"
 
 [dependencies]
-shogi-core = { path = "../shogi-core" }
+shogi-core = { path = "../shogi-core", package = "sekirei-core" }

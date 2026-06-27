@@ -1,12 +1,15 @@
 [package]
-name = "csa"
+name = "sekirei-csa"
 version = "0.1.0"
 edition = "2024"
+description = "CSA/floodgate client for the Sekirei shogi engine"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kent-tokyo/sekirei"
 
 [[bin]]
 name = "sekirei-csa"
 path = "src/main.rs"
 
 [dependencies]
-shogi-core = { path = "../shogi-core" }
+shogi-core = { path = "../shogi-core", package = "sekirei-core" }
 dotenvy = "0.15"

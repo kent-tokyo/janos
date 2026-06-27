@@ -1,11 +1,14 @@
 [package]
-name = "train"
+name = "sekirei-train"
 version = "0.1.0"
 edition = "2024"
+description = "NNUE training pipeline for the Sekirei shogi engine"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kent-tokyo/sekirei"
 
 [[bin]]
 name = "train"
 path = "src/main.rs"
 
 [dependencies]
-shogi-core = { path = "../shogi-core" }
+shogi-core = { path = "../shogi-core", package = "sekirei-core" }
