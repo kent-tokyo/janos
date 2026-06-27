@@ -39,8 +39,8 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
 
-    let tt = Tt::new(DEFAULT_HASH_MB);
-    let searcher = Arc::new(SpeculativeSearcher::new(tt.clone(), 3));
+    let mut hash_mb = DEFAULT_HASH_MB;
+    let mut searcher = make_searcher(hash_mb);
 
     // Current board position (updated by "position" commands)
     let mut board = Board::startpos();
@@ -74,6 +74,17 @@ fn main() {
                 stdout.lock().flush().ok();
             }
 
+            "setoption" => {
+                // "setoption name Hash value 256"
+                let parts: Vec<&str> = rest.split_whitespace().collect();
+                if parts.get(1) == Some(&"Hash")
+                    && let Some(mb) = parts.get(3).and_then(|s| s.parse().ok())
+                {
+                    hash_mb = mb;
+                    searcher = make_searcher(hash_mb);
+                }
+            }
+
             "usinewgame" => {
                 board = Board::startpos();
             }
@@ -84,6 +95,10 @@ fn main() {
             },
 
             "go" => {
+                // Abort any in-flight search before starting a new one
+                if let Some(prev) = search_abort.take() {
+                    prev.store(true, Ordering::Relaxed);
+                }
                 let config = parse_go(rest, board.side_to_move);
                 let abort = searcher.abort_flag();
                 search_abort = Some(abort);
@@ -138,6 +153,12 @@ fn main() {
             }
         }
     }
+}
+
+// ---- Helpers ----
+
+fn make_searcher(hash_mb: usize) -> Arc<SpeculativeSearcher> {
+    Arc::new(SpeculativeSearcher::new(Tt::new(hash_mb), 3))
 }
 
 // ---- Go command time-control parsing ----

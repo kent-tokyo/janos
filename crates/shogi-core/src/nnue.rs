@@ -241,8 +241,11 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
         out,
         out_bias,
     };
-    let _ = WEIGHTS.set(w);
-    NNUE_ACTIVE.store(true, Ordering::Relaxed);
+    if WEIGHTS.set(w).is_ok() {
+        NNUE_ACTIVE.store(true, Ordering::Relaxed);
+    } else {
+        eprintln!("[nnue] weights already loaded; ignoring duplicate load");
+    }
 
     Ok(())
 }

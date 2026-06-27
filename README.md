@@ -137,5 +137,5 @@ floodgate match results: pending (engine currently connecting as `janos_20260623
 
 - NNUE weights are not bundled; train from floodgate CSA data or use the material eval fallback
 - floodgate match history pending (engine registered as `janos_20260623`)
-- USI `stop` command is synchronous — search completes before responding (no background thread)
-- Time management is heuristic; no pondering or time-inc support
+- `setoption EvalFile` not yet supported (reload requires engine restart)
+- No pondering support
