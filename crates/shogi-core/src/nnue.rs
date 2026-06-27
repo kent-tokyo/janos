@@ -19,10 +19,10 @@
 //! Default weights are generated at first access via an LCG.
 //! Trained weights loaded via `load_weights(path)`.
 //!
-//! # Binary file format (JANOSW03)
+//! # Binary file format (SEKIRW01)
 //!
 //!   Offset        Size           Content
-//!   0             8              Magic: b"JANOSW03"
+//!   0             8              Magic: b"SEKIRW01"
 //!   8             INPUT*L1*2     ft_weights: INPUT × L1 × i16 (INPUT=2420)
 //!   +L1*2         L1*2           ft_bias: L1 × i16
 //!   +2*L1*L2*4    2*L1*L2*4     l2_weights: (2×L1) × L2 × f32
@@ -164,9 +164,9 @@ pub fn weights_active() -> bool {
     NNUE_ACTIVE.load(Ordering::Relaxed)
 }
 
-/// Load weights from a JANOSW03 binary file and activate NNUE evaluation.
+/// Load weights from a SEKIRW01 binary file and activate NNUE evaluation.
 pub fn load_weights(path: &Path) -> io::Result<()> {
-    const MAGIC: &[u8] = b"JANOSW03";
+    const MAGIC: &[u8] = b"SEKIRW01";
     let ft_bytes = INPUT * L1 * 2;
     let bias_bytes = L1 * 2;
     let l2_bytes = 2 * L1 * L2 * 4;
@@ -189,7 +189,7 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
         return Err(Error::new(
             ErrorKind::InvalidData,
             format!(
-                "bad magic — expected JANOSW03, got {:?}. Old JANOSW02 weights need retraining.",
+                "bad magic — expected SEKIRW01, got {:?}. Old JANOSW02 weights need retraining.",
                 &data[..8]
             ),
         ));
@@ -250,12 +250,12 @@ pub fn load_weights(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Serialise weights to a binary file in JANOSW02 format.
+/// Serialise weights to a binary file in SEKIRW01 format.
 pub fn save_weights(w: &NnueWeights, path: &Path) -> io::Result<()> {
     let capacity = 8 + INPUT * L1 * 2 + L1 * 2 + 2 * L1 * L2 * 4 + L2 * 4 + L2 * 4 + 4;
     let mut data = Vec::with_capacity(capacity);
 
-    data.extend_from_slice(b"JANOSW03");
+    data.extend_from_slice(b"SEKIRW01");
     for row in &w.ft {
         for &v in row {
             data.extend_from_slice(&v.to_le_bytes());

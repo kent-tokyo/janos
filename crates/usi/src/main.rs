@@ -1,4 +1,4 @@
-//! Janos — USI (Universal Shogi Interface) engine binary.
+//! Sekirei — USI (Universal Shogi Interface) engine binary.
 //!
 //! Run: `cargo run --release -p usi`
 //! Then paste USI commands on stdin.
@@ -20,7 +20,7 @@ use shogi_core::{
 
 // ---- Engine identity ----
 
-const ENGINE_NAME: &str = "Janos";
+const ENGINE_NAME: &str = "Sekirei";
 const ENGINE_AUTHOR: &str = "ke.tanabe@gmail.com";
 const DEFAULT_HASH_MB: usize = 64;
 

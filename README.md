@@ -1,12 +1,10 @@
-# Janos
+# Sekirei
 
 [![CI](https://github.com/kent-tokyo/janos/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/janos/actions/workflows/ci.yml)
 
 [日本語](README_ja.md)
 
-**JANOS** = *Jet-speed Ancestry Node Optimizer of Shogi*
-
-Janos is an experimental Rust shogi engine exploring speculative parallel search
+Sekirei is an experimental Rust shogi engine exploring speculative parallel search
 and NNUE-style evaluation. It can play on floodgate/CSA and via USI, but its
 strength, time management, and evaluation quality are still under active development.
 
@@ -16,7 +14,7 @@ The project is motivated by how Rust's ownership model enables safe concurrent s
 ## Current Status
 
 - USI-compatible; works with ShogiGUI and similar GUIs
-- CSA client for floodgate (connected as `janos_20260623`)
+- CSA client for floodgate (connected as `janos_20260623`; account rename pending)
 - NNUE-style evaluation available; weights not bundled — train from CSA data or use material fallback
 - Floodgate rating is volatile (active testing)
 
@@ -38,9 +36,9 @@ crates/
     tt.rs       — lock-free transposition table (XOR-trick, depth-preferred)
     speculative.rs — preemptive speculation + RAII cancel
     policy.rs   — lightweight move scorer for speculation
-  usi/          — USI server → binary: janos
-  csa/          — floodgate CSA client → binary: janos-csa
-  match-runner/ — USI-vs-USI strength test manager → binary: janos-match
+  usi/          — USI server → binary: sekirei
+  csa/          — floodgate CSA client → binary: sekirei-csa
+  match-runner/ — USI-vs-USI strength test manager → binary: sekirei-match
   train/        — NNUE training pipeline (CSA parser, Adam SGD, weight I/O)
   bench/        — microbenchmarks (movegen, perft, search, evaluate)
 ```
@@ -100,15 +98,15 @@ cargo run --release -p usi -- weights.bin
 # Connect to floodgate (CSA)
 cargo run --release -p csa -- --user <name> --password <pass> --loop
 
-# Strength test: janos vs janos (10 games, 1 sec byoyomi)
+# Strength test: sekirei vs sekirei (10 games, 1 sec byoyomi)
 cargo run --release -p match-runner -- \
-  --engine1 ./target/release/janos \
-  --engine2 ./target/release/janos \
+  --engine1 ./target/release/sekirei \
+  --engine2 ./target/release/sekirei \
   --games 10 --byoyomi 1000
 
-# Strength test: janos vs external USI engine
+# Strength test: sekirei vs external USI engine
 cargo run --release -p match-runner -- \
-  --engine1 ./target/release/janos \
+  --engine1 ./target/release/sekirei \
   --engine2 /path/to/suisho5 \
   --games 100 --byoyomi 10000
 
@@ -129,7 +127,7 @@ Measured on Apple M4 Pro (`cargo build --release`, `target-cpu=native`).
 | Search NPS with NNUE (10 s time control) | ~1.1M nps, depth 13 |
 | Test suite | 15 tests pass |
 
-floodgate status: active testing as `janos_20260623`; rating is currently volatile.
+floodgate status: active testing; rating is currently volatile.
 
 ## Current Limitations
 
@@ -139,11 +137,8 @@ floodgate status: active testing as `janos_20260623`; rating is currently volati
 
 ## Name Origin
 
-**Janos** is inspired by the Hungarian name **János**.
+**Sekirei** (セキレイ) is the Japanese word for wagtail — a small, nimble bird
+known for its quick, darting movement.
 
-It nods to John von Neumann, whose work in computing and game theory resonates
-with game-tree search, and to Béla Bartók, who transformed tradition into a new
-language of his own.
-
-Janos follows established shogi-engine ideas while exploring Rust as a safer,
-more maintainable implementation language.
+The name reflects the engine's focus on fast, speculative search: committing to
+moves early, then correcting course as the tree develops.

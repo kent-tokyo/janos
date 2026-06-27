@@ -1,7 +1,7 @@
-//! Janos CSA client — connects to a floodgate server and plays games.
+//! Sekirei CSA client — connects to a floodgate server and plays games.
 //!
 //! Usage:
-//!   janos-csa --user <name> --password <pass> [OPTIONS]
+//!   sekirei-csa --user <name> --password <pass> [OPTIONS]
 //!
 //! Options:
 //!   --server <host>    (default: wdoor.c.u-tokyo.ac.jp)
@@ -130,9 +130,9 @@ fn parse_args() -> Result<Config, String> {
         i += 1;
     }
 
-    // JANOS_USER env var
+    // SEKIREI_USER env var
     if cfg.user == "anonymous"
-        && let Ok(user) = std::env::var("JANOS_USER")
+        && let Ok(user) = std::env::var("SEKIREI_USER")
     {
         cfg.user = user;
     }
@@ -140,7 +140,7 @@ fn parse_args() -> Result<Config, String> {
     if let Some(t) = trip {
         cfg.password = format!("{},{}", cfg.game_id, t);
     } else if cfg.password == Config::default().password
-        && let Ok(t) = std::env::var("JANOS_TRIP")
+        && let Ok(t) = std::env::var("SEKIREI_TRIP")
     {
         cfg.password = format!("{},{}", cfg.game_id, t);
     }
@@ -158,9 +158,9 @@ fn arg(argv: &[String], i: usize) -> Result<String, String> {
 }
 
 fn print_usage() {
-    eprintln!("Usage: janos-csa --user <name> [--trip <secret> | --password <pass>] [OPTIONS]");
+    eprintln!("Usage: sekirei-csa --user <name> [--trip <secret> | --password <pass>] [OPTIONS]");
     eprintln!();
-    eprintln!("  Trip (recommended): set JANOS_TRIP env var or use --trip <secret>");
+    eprintln!("  Trip (recommended): set SEKIREI_TRIP env var or use --trip <secret>");
     eprintln!("  Password is built automatically as \"<game-id>,<trip>\"");
     eprintln!();
     eprintln!("  --server <host>    floodgate server (default: wdoor.c.u-tokyo.ac.jp)");

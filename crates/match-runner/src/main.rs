@@ -1,7 +1,7 @@
-//! Janos match runner — USI-vs-USI game manager for strength testing.
+//! Sekirei match runner — USI-vs-USI game manager for strength testing.
 //!
 //! Usage:
-//!   janos-match --engine1 ./janos --engine2 /path/to/other --games 100 --byoyomi 10000
+//!   sekirei-match --engine1 ./sekirei --engine2 /path/to/other --games 100 --byoyomi 10000
 //!
 //! Options:
 //!   --engine1 <path>     first engine binary
@@ -100,7 +100,7 @@ fn get(argv: &[String], i: usize) -> Result<String, String> {
 }
 
 fn print_usage() {
-    eprintln!("Usage: janos-match --engine1 <path> --engine2 <path> [OPTIONS]");
+    eprintln!("Usage: sekirei-match --engine1 <path> --engine2 <path> [OPTIONS]");
     eprintln!();
     eprintln!("  --engine1 <path>     first engine binary");
     eprintln!("  --engine2 <path>     second engine binary");

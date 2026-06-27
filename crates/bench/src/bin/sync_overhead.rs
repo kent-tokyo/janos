@@ -215,7 +215,7 @@ fn main() {
     thread_counts.push(num_cores);
     thread_counts.dedup();
 
-    println!("=== Janos Sync Overhead Measurement ===");
+    println!("=== Sekirei Sync Overhead Measurement ===");
     println!("Hardware threads : {num_cores}");
     println!("Metric           : differential (contended vs partitioned), best of {REPS} reps");
     println!("Ops per thread   : {OPS_PER_THREAD}");

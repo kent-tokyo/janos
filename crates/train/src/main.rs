@@ -1,4 +1,4 @@
-//! Janos NNUE trainer — supervised learning from CSA game files.
+//! Sekirei NNUE trainer — supervised learning from CSA game files.
 //!
 //! # Usage
 //!
