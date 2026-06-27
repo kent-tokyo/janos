@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use crate::board::Board;
 use crate::movegen::generate_legal_moves;
 use crate::mv::Move;
+use crate::piece::PieceKind;
 use crate::policy;
 use crate::tt::{Bound, Tt, TtEntry};
 
@@ -65,6 +66,11 @@ impl SpecGroup {
                 rayon::spawn(move || {
                     // Check abort flags before doing any work
                     if abort_c.load(Ordering::Relaxed) || state_c.abort.load(Ordering::Relaxed) {
+                        result_c.store(0, Ordering::Relaxed);
+                        return;
+                    }
+                    // policy::top_n uses pseudo-legal generation; skip king captures
+                    if b.piece_at(m.to).is_some_and(|p| p.kind == PieceKind::Ou) {
                         result_c.store(0, Ordering::Relaxed);
                         return;
                     }

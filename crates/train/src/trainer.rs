@@ -17,6 +17,8 @@ use shogi_core::{
     color::Color,
     nnue::{INPUT, L1, L2, NnueWeights, feature_index, hand_feature_index},
     piece::PieceKind,
+    search::{SearchConfig, Searcher},
+    tt::Tt,
 };
 
 use crate::csa::{CsaGame, GameResult};
@@ -56,7 +58,8 @@ impl TrainWeights {
         let out_len = L2;
         TrainWeights {
             ft: vec![0.0; ft_len],
-            ft_bias: vec![0.0; L1],
+            // Non-zero bias ensures ClippedReLU inputs are > 0 so gradients flow
+            ft_bias: vec![0.5; L1],
             l2: vec![0.0; l2_len],
             l2_bias: vec![0.0; L2],
             out: vec![0.0; out_len],
@@ -80,16 +83,18 @@ impl TrainWeights {
 
     /// Quantise FT to i16; L2/out stay f32.  Returns an NnueWeights ready for inference.
     pub fn to_nnue_weights(&self) -> NnueWeights {
-        // FT: f32 → i16
+        // FT: f32 → i16, scaled by FT_SCALE so small weights (≈±0.1) survive quantisation.
+        // Inference must divide by FT_SCALE after ClippedReLU to recover the float equivalent.
+        const FT_SCALE: f32 = 64.0;
         let mut ft = vec![[0i16; L1]; INPUT];
         for i in 0..INPUT {
             for j in 0..L1 {
-                ft[i][j] = self.ft[i * L1 + j].clamp(-32767.0, 32767.0) as i16;
+                ft[i][j] = (self.ft[i * L1 + j] * FT_SCALE).clamp(-32767.0, 32767.0) as i16;
             }
         }
         let mut ft_bias = [0i16; L1];
         for (i, &v) in self.ft_bias.iter().enumerate() {
-            ft_bias[i] = v.clamp(-32767.0, 32767.0) as i16;
+            ft_bias[i] = (v * FT_SCALE).clamp(-32767.0, 32767.0) as i16;
         }
 
         // L2 / out: f32 → f32 (no quantisation)
@@ -123,15 +128,18 @@ pub struct Trainer {
     pub total_loss: f64,
     pub total_count: u64,
     pub lr: f32,
+    searcher: Searcher,
 }
 
 impl Trainer {
     pub fn new() -> Self {
+        let tt = Tt::new(4); // Tt::new returns Arc<Tt>
         Trainer {
             weights: TrainWeights::new(),
             total_loss: 0.0,
             total_count: 0,
             lr: 0.001,
+            searcher: Searcher::new(tt),
         }
     }
 
@@ -147,13 +155,10 @@ impl Trainer {
 
         for (ply, &mv) in game.moves.iter().enumerate() {
             if ply % sample_every == 0 {
-                let stm = board.side_to_move;
-                let teacher = if stm == Color::Black {
-                    black_result
-                } else {
-                    -black_result
-                };
-                self.train_position(&board, teacher * 600.0);
+                let config = SearchConfig { max_depth: 1, time_limit: None };
+                let info = self.searcher.search(&mut board, config);
+                let teacher = (info.score as f32).clamp(-600.0, 600.0);
+                self.train_position(&board, teacher);
             }
             board.do_move(mv);
         }

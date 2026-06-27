@@ -29,6 +29,7 @@ struct Args {
     epochs: usize,
     sample: usize,     // sample every N plies per game
     best_every: usize, // save best-loss checkpoint every N games (0 = disabled)
+    min_rate: f32,     // minimum rating for both players (0 = no filter)
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -38,6 +39,7 @@ fn parse_args() -> Result<Args, String> {
     let mut epochs = 3usize;
     let mut sample = 4usize;
     let mut best_every = 0usize;
+    let mut min_rate = 1500.0f32;
     let mut i = 0;
 
     while i < argv.len() {
@@ -70,6 +72,12 @@ fn parse_args() -> Result<Args, String> {
                     best_every = s.parse().unwrap_or(0);
                 }
             }
+            "--min-rate" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    min_rate = s.parse().unwrap_or(1500.0);
+                }
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -85,6 +93,7 @@ fn parse_args() -> Result<Args, String> {
         epochs,
         sample,
         best_every,
+        min_rate,
     })
 }
 
@@ -96,6 +105,7 @@ fn print_usage() {
     eprintln!("  --epochs <n>        Training epochs (default: 3)");
     eprintln!("  --sample <n>        Sample every N plies per game (default: 4)");
     eprintln!("  --best-every <n>    Save best-loss checkpoint every N games (default: 0 = off)");
+    eprintln!("  --min-rate <r>      Minimum rating for both players (default: 1500, 0 = no filter)");
     eprintln!();
     eprintln!("Data: download floodgate archives from http://wdoor.c.u-tokyo.ac.jp/shogi/");
 }
@@ -147,8 +157,15 @@ fn main() {
         .iter()
         .filter_map(|p| fs::read_to_string(p).ok())
         .filter_map(|text| parse_csa(&text))
+        .filter(|g| {
+            if args.min_rate <= 0.0 {
+                return true;
+            }
+            g.black_rate.map_or(false, |r| r >= args.min_rate)
+                && g.white_rate.map_or(false, |r| r >= args.min_rate)
+        })
         .collect();
-    eprintln!("{} games loaded", games.len());
+    eprintln!("{} games loaded (min_rate={})", games.len(), args.min_rate);
 
     if games.is_empty() {
         eprintln!("No valid games parsed — check CSA format");

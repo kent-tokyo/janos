@@ -5,13 +5,15 @@
 
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use shogi_core::{
     board::Board,
     color::Color,
     nnue::load_weights,
-    search::{SearchConfig, Searcher},
+    search::{SearchConfig, SpeculativeSearcher},
     sfen::{move_to_usi, parse_position_cmd},
     tt::Tt,
 };
@@ -38,10 +40,13 @@ fn main() {
     let stdout = io::stdout();
 
     let tt = Tt::new(DEFAULT_HASH_MB);
-    let searcher = Searcher::new(tt.clone());
+    let searcher = Arc::new(SpeculativeSearcher::new(tt.clone(), 3));
 
     // Current board position (updated by "position" commands)
     let mut board = Board::startpos();
+
+    // Abort flag for the currently running search (None if no search in flight)
+    let mut search_abort: Option<Arc<AtomicBool>> = None;
 
     for raw in stdin.lock().lines() {
         let Ok(line) = raw else { break };
@@ -65,7 +70,6 @@ fn main() {
             }
 
             "isready" => {
-                // Nothing expensive to do right now
                 println!("readyok");
                 stdout.lock().flush().ok();
             }
@@ -81,42 +85,53 @@ fn main() {
 
             "go" => {
                 let config = parse_go(rest, board.side_to_move);
-                let info = searcher.search(&mut board, config);
+                let abort = searcher.abort_flag();
+                search_abort = Some(abort);
 
-                // Output a single info line with the completed search result
-                let elapsed_ms = info.elapsed.as_millis().max(1) as u64;
-                let nps = info.nodes.saturating_mul(1000) / elapsed_ms;
-                if let Some(m) = info.best_move {
-                    println!(
-                        "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                        info.depth,
-                        info.score,
-                        info.nodes,
-                        nps,
-                        elapsed_ms,
-                        info.hashfull,
-                        move_to_usi(m)
-                    );
-                }
+                let searcher2 = Arc::clone(&searcher);
+                let mut board2 = board.clone();
 
-                let best = info
-                    .best_move
-                    .map(move_to_usi)
-                    .unwrap_or_else(|| "resign".to_string());
-                println!("bestmove {best}");
-                stdout.lock().flush().ok();
+                std::thread::spawn(move || {
+                    let info = searcher2.search(&mut board2, config);
+
+                    let elapsed_ms = info.elapsed.as_millis().max(1) as u64;
+                    let nps = info.nodes.saturating_mul(1000) / elapsed_ms;
+                    if let Some(m) = info.best_move {
+                        println!(
+                            "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
+                            info.depth,
+                            info.score,
+                            info.nodes,
+                            nps,
+                            elapsed_ms,
+                            info.hashfull,
+                            move_to_usi(m)
+                        );
+                    }
+
+                    let best = info
+                        .best_move
+                        .map(move_to_usi)
+                        .unwrap_or_else(|| "resign".to_string());
+                    println!("bestmove {best}");
+                    io::stdout().lock().flush().ok();
+                });
             }
 
             "stop" => {
-                // With time-limit based search there is nothing to interrupt;
-                // bestmove was already printed when "go" returned.
+                if let Some(a) = search_abort.take() {
+                    a.store(true, Ordering::Relaxed);
+                }
             }
 
-            "gameover" => {
-                // result: "win" / "lose" / "draw" — no action needed
-            }
+            "gameover" => {}
 
-            "quit" => break,
+            "quit" => {
+                if let Some(a) = search_abort.take() {
+                    a.store(true, Ordering::Relaxed);
+                }
+                break;
+            }
 
             _ => {
                 eprintln!("unknown command: '{cmd}'");
@@ -168,28 +183,23 @@ fn parse_go(args: &str, side: Color) -> SearchConfig {
     }
 
     let time_limit = if infinite {
-        None // no limit
+        None
     } else if let Some(mt) = movetime {
-        // Fixed time: leave 50 ms buffer for I/O
         Some(Duration::from_millis(mt.saturating_sub(50).max(50)))
     } else {
-        // Allocate from main time and byoyomi together.
-        // main_time/30  — proportional share of remaining main time
-        // byoyomi*4/5   — safe portion of per-move byoyomi (floor)
-        // Take the larger: ensures we use main time while never going below byoyomi budget.
         let our_time = match side {
             Color::Black => btime.unwrap_or(0),
             Color::White => wtime.unwrap_or(0),
         };
         let byo_ms = byoyomi.unwrap_or(0);
         let from_main = if our_time > 0 { our_time / 30 } else { 0 };
-        let from_byo = byo_ms * 13 / 20; // 65% — accounts for YBW parallel search overshoot
+        let from_byo = byo_ms * 13 / 20;
         let alloc = from_main.max(from_byo).max(100);
         Some(Duration::from_millis(alloc))
     };
 
     SearchConfig {
-        max_depth: depth.unwrap_or(50), // iterative deepening caps here or at time
+        max_depth: depth.unwrap_or(50),
         time_limit,
     }
 }

@@ -374,12 +374,15 @@ impl NnueAcc {
         let us = stm.index();
         let them = 1 - us;
 
-        // Dequantize FT accumulators to f32
+        // Dequantize FT accumulators to f32.
+        // FT weights are stored scaled by 64 (see to_nnue_weights), so accumulator values
+        // are also 64× larger. Divide by 64 here to recover the float equivalent.
+        const FT_SCALE: f32 = 64.0;
         let mut relu_us = [0.0f32; L1];
         let mut relu_them = [0.0f32; L1];
         for j in 0..L1 {
-            relu_us[j] = self.values[us][j].clamp(0, 127) as f32;
-            relu_them[j] = self.values[them][j].clamp(0, 127) as f32;
+            relu_us[j] = self.values[us][j].clamp(0, (127.0 * FT_SCALE) as i16) as f32 / FT_SCALE;
+            relu_them[j] = self.values[them][j].clamp(0, (127.0 * FT_SCALE) as i16) as f32 / FT_SCALE;
         }
 
         // L2 forward (input-first loop for cache-friendly access to l2[j])

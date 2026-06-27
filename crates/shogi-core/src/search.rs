@@ -1047,21 +1047,28 @@ pub struct SpecSearchInfo {
 pub struct SpeculativeSearcher {
     tt: Arc<Tt>,
     top_n: usize,
+    external_abort: Arc<AtomicBool>,
 }
 
 impl SpeculativeSearcher {
     pub fn new(tt: Arc<Tt>, top_n: usize) -> Self {
-        SpeculativeSearcher { tt, top_n }
+        SpeculativeSearcher { tt, top_n, external_abort: Arc::new(AtomicBool::new(false)) }
+    }
+
+    /// Returns a clone of the abort flag; set to `true` to stop an in-progress search.
+    pub fn abort_flag(&self) -> Arc<AtomicBool> {
+        self.external_abort.clone()
     }
 
     pub fn search(&self, board: &mut Board, config: SearchConfig) -> SpecSearchInfo {
+        self.external_abort.store(false, Ordering::Relaxed);
         let global_abort = Arc::new(AtomicBool::new(false));
 
         let state = Arc::new(SearchState {
             tt: self.tt.clone(),
             nodes: AtomicU64::new(0),
             abort: AtomicBool::new(false),
-            external_abort: Arc::new(AtomicBool::new(false)),
+            external_abort: self.external_abort.clone(),
             start: Instant::now(),
             time_limit: config.time_limit,
             killers: KillerTable::new(),

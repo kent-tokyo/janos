@@ -42,15 +42,18 @@ fn main() {
 
     let mut attempts = 0u32;
     loop {
-        attempts += 1;
         match CsaClient::connect(config.clone()) {
             Ok(mut client) => {
-                attempts = 0;
-                if let Err(e) = client.run() {
-                    eprintln!("[csa] connection error: {e}");
+                match client.run() {
+                    Ok(()) => { attempts = 0; }
+                    Err(e) => {
+                        attempts += 1;
+                        eprintln!("[csa] connection error: {e}");
+                    }
                 }
             }
             Err(e) => {
+                attempts += 1;
                 eprintln!("[csa] connect failed (attempt {attempts}): {e}");
             }
         }
@@ -67,6 +70,7 @@ fn main() {
 fn parse_args() -> Result<Config, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut cfg = Config::default();
+    let mut trip: Option<String> = None;
     let mut i = 0;
 
     while i < argv.len() {
@@ -88,10 +92,8 @@ fn parse_args() -> Result<Config, String> {
                 cfg.password = arg(&argv, i)?;
             }
             "--trip" => {
-                // Build password as "{game_id},{trip}" automatically
                 i += 1;
-                let trip = arg(&argv, i)?;
-                cfg.password = format!("{},{}", cfg.game_id, trip);
+                trip = Some(arg(&argv, i)?);
             }
             "--game" => {
                 i += 1;
@@ -134,11 +136,13 @@ fn parse_args() -> Result<Config, String> {
     {
         cfg.user = user;
     }
-    // JANOS_TRIP env var: auto-build password if --trip / --password not given
-    if cfg.password == Config::default().password
-        && let Ok(trip) = std::env::var("JANOS_TRIP")
+    // Build password from trip after all args parsed (so --game order doesn't matter)
+    if let Some(t) = trip {
+        cfg.password = format!("{},{}", cfg.game_id, t);
+    } else if cfg.password == Config::default().password
+        && let Ok(t) = std::env::var("JANOS_TRIP")
     {
-        cfg.password = format!("{},{}", cfg.game_id, trip);
+        cfg.password = format!("{},{}", cfg.game_id, t);
     }
 
     if cfg.user == "anonymous" {
@@ -169,19 +173,3 @@ fn print_usage() {
     eprintln!("  --loop             reconnect after each game");
 }
 
-// Config must be Clone for the retry loop
-impl Clone for Config {
-    fn clone(&self) -> Self {
-        Config {
-            server: self.server.clone(),
-            port: self.port,
-            user: self.user.clone(),
-            password: self.password.clone(),
-            game_id: self.game_id.clone(),
-            hash_mb: self.hash_mb,
-            resign_score: self.resign_score,
-            keep_alive: self.keep_alive,
-            max_depth: self.max_depth,
-        }
-    }
-}

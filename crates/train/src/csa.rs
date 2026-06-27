@@ -26,6 +26,8 @@ pub struct CsaGame {
     /// The game moves as legal `Move` values starting from `Board::startpos()`.
     pub moves: Vec<Move>,
     pub result: GameResult,
+    pub black_rate: Option<f32>,
+    pub white_rate: Option<f32>,
 }
 
 // ---- Public entry point ----
@@ -36,16 +38,30 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
     let mut moves = Vec::new();
     let mut result = GameResult::Unknown;
     let mut board = Board::startpos();
+    let mut black_rate: Option<f32> = None;
+    let mut white_rate: Option<f32> = None;
 
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty()
-            || line.starts_with('\'')
             || line.starts_with('$')
             || line.starts_with('V')
             || line.starts_with('N')
             || line.starts_with('T')
         {
+            continue;
+        }
+
+        // Rating comment lines: 'black_rate:Name+hash:4479.0  or  'white_rate:Name+hash:1800.0
+        if line.starts_with("'black_rate:") {
+            black_rate = line.rsplit(':').next().and_then(|s| s.parse().ok());
+            continue;
+        }
+        if line.starts_with("'white_rate:") {
+            white_rate = line.rsplit(':').next().and_then(|s| s.parse().ok());
+            continue;
+        }
+        if line.starts_with('\'') {
             continue;
         }
 
@@ -112,7 +128,7 @@ pub fn parse_csa(text: &str) -> Option<CsaGame> {
     if moves.is_empty() {
         return None;
     }
-    Some(CsaGame { moves, result })
+    Some(CsaGame { moves, result, black_rate, white_rate })
 }
 
 // ---- Helpers ----

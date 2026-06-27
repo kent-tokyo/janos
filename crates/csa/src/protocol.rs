@@ -10,7 +10,6 @@
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
-use std::sync::Arc;
 use std::time::Duration;
 
 use shogi_core::{
@@ -24,6 +23,7 @@ use crate::moves::{csa_to_move, move_to_csa};
 
 // ---- Public config ----
 
+#[derive(Clone)]
 pub struct Config {
     pub server: String,
     pub port: u16,
@@ -67,8 +67,6 @@ pub enum GameResult {
 pub struct CsaClient {
     reader: BufReader<TcpStream>,
     writer: TcpStream,
-    #[allow(dead_code)]
-    tt: Arc<Tt>, // kept alive to share with Searcher
     searcher: Searcher,
     config: Config,
 }
@@ -79,19 +77,16 @@ impl CsaClient {
         let addr = format!("{}:{}", config.server, config.port);
         eprintln!("[csa] connecting to {addr}");
         let stream = TcpStream::connect(&addr)?;
-        // No read timeout: floodgate keeps the connection open between games (up to 30 min wait).
-        // Broken pipe / EOF triggers reconnect via the outer retry loop.
-        stream.set_read_timeout(None)?;
+        // 40-min timeout catches dead TCP connections; longer than the 30-min between-game wait.
+        stream.set_read_timeout(Some(Duration::from_secs(40 * 60)))?;
 
         let writer = stream.try_clone()?;
         let reader = BufReader::new(stream);
-        let tt = Tt::new(config.hash_mb);
-        let searcher = Searcher::new(tt.clone());
+        let searcher = Searcher::new(Tt::new(config.hash_mb));
 
         let mut client = CsaClient {
             reader,
             writer,
-            tt,
             searcher,
             config,
         };
@@ -103,10 +98,8 @@ impl CsaClient {
     pub fn run(&mut self) -> io::Result<()> {
         loop {
             self.request_game()?;
-            match self.play_game() {
-                Ok(result) => eprintln!("[csa] game over: {result:?}"),
-                Err(e) => eprintln!("[csa] game error: {e}"),
-            }
+            let result = self.play_game()?;
+            eprintln!("[csa] game over: {result:?}");
             if !self.config.keep_alive {
                 break;
             }
@@ -125,7 +118,10 @@ impl CsaClient {
 
     fn recv(&mut self) -> io::Result<String> {
         let mut line = String::new();
-        self.reader.read_line(&mut line)?;
+        let n = self.reader.read_line(&mut line)?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed"));
+        }
         let trimmed = line.trim_end().to_string();
         eprintln!("[csa] << {trimmed}");
         Ok(trimmed)
@@ -163,32 +159,23 @@ impl CsaClient {
 
     fn play_game(&mut self) -> io::Result<GameResult> {
         // Read game header until START
-        let our_name = self.config.user.clone();
-        let mut our_color = Color::Black; // updated when we see BEGIN
+        let mut our_color = Color::Black;
+        let mut game_summary_id = String::new();
 
         loop {
             let line = self.recv()?;
-            if line.starts_with("BEGIN ") {
-                // "BEGIN GameID+black_player+white_player"
-                let parts: Vec<&str> = line
-                    .strip_prefix("BEGIN ")
-                    .unwrap_or("")
-                    .split('+')
-                    .collect();
-                if parts.len() >= 3 {
-                    let black = parts[1];
-                    our_color = if black.starts_with(&our_name) {
-                        Color::Black
-                    } else {
-                        Color::White
-                    };
-                }
-            } else if line.starts_with("START ") {
+            if line.starts_with("Game_ID:") {
+                game_summary_id = line["Game_ID:".len()..].to_string();
+            } else if line.starts_with("Your_Turn:") {
+                our_color = if line.ends_with('+') { Color::Black } else { Color::White };
+            } else if line == "END Game_Summary" {
+                self.send(&format!("AGREE:{}", game_summary_id))?;
+            } else if line.starts_with("START:") {
                 break;
             } else if line.starts_with('#') {
                 return Ok(GameResult::Aborted);
             }
-            // Skip P1..P9, PI, +/- declarations, metadata
+            // Skip P1..P9, PI, +/- declarations, time/position blocks
         }
 
         eprintln!("[csa] game started, we are {:?}", our_color);
@@ -197,7 +184,9 @@ impl CsaClient {
         board.refresh_acc();
         let mut time_left_ms: u64 = self.initial_time_from_game_id();
         let byoyomi_ms: u64 = self.byoyomi_from_game_id();
-        let mut moves_str = String::new();
+        let is_fischer = self.config.game_id
+            .rfind('-')
+            .is_some_and(|p| self.config.game_id[p + 1..].ends_with('F'));
 
         eprintln!(
             "[csa] time budget: {}s main + {}s byoyomi",
@@ -205,29 +194,28 @@ impl CsaClient {
             byoyomi_ms / 1000
         );
 
+        let mut resigned = false;
         loop {
             let stm = board.side_to_move;
 
-            if stm == our_color {
+            if stm == our_color && !resigned {
                 // Our turn — search and send
                 let result = self.think_and_send(
                     &mut board,
                     our_color,
-                    &moves_str,
                     time_left_ms,
                     byoyomi_ms,
                 )?;
-                if let Some(m) = result.move_made {
-                    if !moves_str.is_empty() {
-                        moves_str.push(' ');
-                    }
-                    moves_str.push_str(&shogi_core::sfen::move_to_usi(m));
+                if result.move_made.is_some() {
                     // Read T{sec} from server and deduct used time from our bank
                     if let Ok(t_line) = self.recv_time_or_move()
                         && let Some(used_sec) = parse_time_line(&t_line)
                     {
                         let used_ms = used_sec * 1000;
                         time_left_ms = time_left_ms.saturating_sub(used_ms);
+                        if is_fischer {
+                            time_left_ms = time_left_ms.saturating_add(byoyomi_ms);
+                        }
                         eprintln!(
                             "[csa] used {}s, remaining {}s",
                             used_sec,
@@ -235,41 +223,26 @@ impl CsaClient {
                         );
                     }
                 } else {
-                    // Resigned
-                    return Ok(GameResult::Lose);
+                    // %TORYO sent — wait for server's #LOSE so the buffer is clean
+                    resigned = true;
                 }
             } else {
-                // Opponent's turn — wait for their move
+                // Opponent's turn (or post-resign drain) — wait for move or result
                 loop {
                     let line = self.recv()?;
                     if line.starts_with('#') {
                         return Ok(parse_game_end(&line));
                     }
-                    if line.starts_with('+') || line.starts_with('-') {
+                    if !resigned && (line.starts_with('+') || line.starts_with('-')) {
                         // Opponent's move
                         if let Some(m) = csa_to_move(&mut board, &line) {
                             board.do_move(m);
-                            if !moves_str.is_empty() {
-                                moves_str.push(' ');
-                            }
-                            moves_str.push_str(&shogi_core::sfen::move_to_usi(m));
                         } else {
                             eprintln!("[csa] unparseable opponent move: {line}");
                         }
                         break;
                     }
-                    // T{sec} for opponent — skip
-                }
-            }
-
-            // Check terminal conditions after every move
-            let legal = shogi_core::movegen::generate_legal_moves(&mut board);
-            if legal.is_empty() {
-                // Side to move is mated — the mover loses
-                if board.side_to_move == our_color {
-                    return Ok(GameResult::Lose);
-                } else {
-                    return Ok(GameResult::Win);
+                    // T{sec} lines and other noise — skip
                 }
             }
         }
@@ -279,7 +252,6 @@ impl CsaClient {
         &mut self,
         board: &mut Board,
         our_color: Color,
-        _moves_str: &str,
         time_left_ms: u64,
         byoyomi_ms: u64,
     ) -> io::Result<ThinkResult> {
