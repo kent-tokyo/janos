@@ -43,6 +43,7 @@ fn main() {
     let mut hash_mb = DEFAULT_HASH_MB;
     let mut searcher = make_searcher(hash_mb);
     let mut eval_file: Option<String> = None;
+    let mut move_overhead_ms: u64 = 50;
 
     // Current board position (updated by "position" commands)
     let mut board = Board::startpos();
@@ -69,6 +70,8 @@ fn main() {
                 println!("id author {ENGINE_AUTHOR}");
                 println!("option name Hash type spin default {DEFAULT_HASH_MB} min 1 max 2048");
                 println!("option name Threads type spin default 0 min 0 max 512");
+                println!("option name MoveOverhead type spin default 50 min 0 max 5000");
+                println!("option name Ponder type check default false");
                 println!("option name EvalFile type string default ");
                 println!("usiok");
                 stdout.lock().flush().ok();
@@ -101,6 +104,10 @@ fn main() {
                         let _ = rayon::ThreadPoolBuilder::new()
                             .num_threads(n)
                             .build_global();
+                    }
+                } else if parts.get(1) == Some(&"MoveOverhead") {
+                    if let Some(n) = parts.get(3).and_then(|s| s.parse().ok()) {
+                        move_overhead_ms = n;
                     }
                 } else if parts.get(1) == Some(&"EvalFile") {
                     // value may contain spaces (e.g. paths with spaces)
@@ -135,7 +142,8 @@ fn main() {
                 if let Some(h) = search_handle.take() {
                     h.join().ok();
                 }
-                let config = parse_go(rest, board.side_to_move);
+                let pondering = rest.split_whitespace().any(|t| t == "ponder");
+                let config = parse_go(rest, board.side_to_move, move_overhead_ms, pondering);
                 let abort = searcher.abort_flag();
                 search_abort = Some(abort);
 
@@ -178,6 +186,16 @@ fn main() {
                 }
             }
 
+            "ponderhit" => {
+                // Abort ponder search; GUI will follow with a new `go` with real time
+                if let Some(a) = search_abort.take() {
+                    a.store(true, Ordering::Relaxed);
+                }
+                if let Some(h) = search_handle.take() {
+                    h.join().ok();
+                }
+            }
+
             "gameover" => {}
 
             "quit" => {
@@ -205,7 +223,7 @@ fn make_searcher(hash_mb: usize) -> Arc<SpeculativeSearcher> {
 
 // ---- Go command time-control parsing ----
 
-fn parse_go(args: &str, side: Color) -> SearchConfig {
+fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> SearchConfig {
     let mut btime: Option<u64> = None;
     let mut wtime: Option<u64> = None;
     let mut byoyomi: Option<u64> = None;
@@ -245,19 +263,29 @@ fn parse_go(args: &str, side: Color) -> SearchConfig {
         i += 1;
     }
 
-    let time_limit = if infinite {
+    let time_limit = if infinite || pondering {
         None
     } else if let Some(mt) = movetime {
-        Some(Duration::from_millis(mt.saturating_sub(50).max(50)))
+        Some(Duration::from_millis(
+            mt.saturating_sub(overhead_ms).max(50),
+        ))
     } else {
         let our_time = match side {
             Color::Black => btime.unwrap_or(0),
             Color::White => wtime.unwrap_or(0),
         };
         let byo_ms = byoyomi.unwrap_or(0);
-        let from_main = if our_time > 0 { our_time / 30 } else { 0 };
+        // Use a tighter divisor when time is low to avoid overspending
+        let divisor = if our_time < 30_000 { 15 } else { 30 };
+        let from_main = if our_time > 0 { our_time / divisor } else { 0 };
         let from_byo = byo_ms * 13 / 20;
-        let alloc = from_main.max(from_byo).max(100);
+        // Panic mode: if under 5 s and byoyomi exists, lean on byoyomi only
+        let alloc = if our_time < 5_000 && byo_ms > 0 {
+            from_byo
+        } else {
+            from_main.max(from_byo)
+        };
+        let alloc = alloc.saturating_sub(overhead_ms).max(50);
         Some(Duration::from_millis(alloc))
     };
 
