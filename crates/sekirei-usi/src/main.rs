@@ -44,6 +44,7 @@ fn main() {
     let mut searcher = make_searcher(hash_mb);
     let mut eval_file: Option<String> = None;
     let mut move_overhead_ms: u64 = 50;
+    let mut multi_pv: u32 = 1;
 
     // Current board position (updated by "position" commands)
     let mut board = Board::startpos();
@@ -51,6 +52,10 @@ fn main() {
     // Abort flag and handle for the currently running search (None if no search in flight)
     let mut search_abort: Option<Arc<AtomicBool>> = None;
     let mut search_handle: Option<JoinHandle<()>> = None;
+    // Set true before aborting a ponder search so the dying thread skips bestmove output
+    let suppress_bm: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    // Saved args from `go ponder ...` so ponderhit can restart with real time limits
+    let mut ponder_go_args: Option<String> = None;
 
     for raw in stdin.lock().lines() {
         let Ok(line) = raw else { break };
@@ -72,6 +77,7 @@ fn main() {
                 println!("option name Threads type spin default 0 min 0 max 512");
                 println!("option name MoveOverhead type spin default 50 min 0 max 5000");
                 println!("option name Ponder type check default false");
+                println!("option name MultiPV type spin default 1 min 1 max 256");
                 println!("option name EvalFile type string default ");
                 println!("usiok");
                 stdout.lock().flush().ok();
@@ -109,6 +115,10 @@ fn main() {
                     if let Some(n) = parts.get(3).and_then(|s| s.parse().ok()) {
                         move_overhead_ms = n;
                     }
+                } else if parts.get(1) == Some(&"MultiPV") {
+                    if let Some(n) = parts.get(3).and_then(|s| s.parse::<u32>().ok()) {
+                        multi_pv = n.max(1);
+                    }
                 } else if parts.get(1) == Some(&"EvalFile") {
                     // value may contain spaces (e.g. paths with spaces)
                     if let Some(val) = rest.split_once("value ").map(|(_, v)| v.trim())
@@ -135,7 +145,8 @@ fn main() {
             },
 
             "go" => {
-                // Abort any in-flight search and join before starting a new one
+                // Abort any in-flight search and join before starting a new one.
+                // suppress_bm stays false so the dying thread still emits bestmove.
                 if let Some(prev) = search_abort.take() {
                     prev.store(true, Ordering::Relaxed);
                 }
@@ -143,28 +154,43 @@ fn main() {
                     h.join().ok();
                 }
                 let pondering = rest.split_whitespace().any(|t| t == "ponder");
-                let config = parse_go(rest, board.side_to_move, move_overhead_ms, pondering);
+                if pondering {
+                    ponder_go_args = Some(rest.to_string());
+                } else {
+                    ponder_go_args = None;
+                }
+                // Reset suppress flag now that the previous thread has joined.
+                suppress_bm.store(false, Ordering::Relaxed);
+                let config = parse_go(rest, board.side_to_move, move_overhead_ms, pondering, multi_pv);
                 let abort = searcher.abort_flag();
                 search_abort = Some(abort);
 
                 let searcher2 = Arc::clone(&searcher);
                 let mut board2 = board.clone();
+                let suppress2 = Arc::clone(&suppress_bm);
 
                 search_handle = Some(std::thread::spawn(move || {
                     let info = searcher2.search(&mut board2, config);
 
+                    if suppress2.load(Ordering::Relaxed) {
+                        return; // ponderhit aborted this search; caller starts a new one
+                    }
+
                     let elapsed_ms = info.elapsed.as_millis().max(1) as u64;
                     let nps = info.nodes.saturating_mul(1000) / elapsed_ms;
-                    if let Some(m) = info.best_move {
+                    if info.pv_list.len() > 1 {
+                        for (i, &(mv, score)) in info.pv_list.iter().enumerate() {
+                            println!(
+                                "info multipv {} depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
+                                i + 1, info.depth, score, info.nodes, nps, elapsed_ms,
+                                info.hashfull, move_to_usi(mv)
+                            );
+                        }
+                    } else if let Some(m) = info.best_move {
                         println!(
                             "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                            info.depth,
-                            info.score,
-                            info.nodes,
-                            nps,
-                            elapsed_ms,
-                            info.hashfull,
-                            move_to_usi(m)
+                            info.depth, info.score, info.nodes, nps, elapsed_ms,
+                            info.hashfull, move_to_usi(m)
                         );
                     }
 
@@ -172,7 +198,20 @@ fn main() {
                         .best_move
                         .map(move_to_usi)
                         .unwrap_or_else(|| "resign".to_string());
-                    println!("bestmove {best}");
+
+                    // Probe TT for predicted opponent reply to offer GUI a ponder move.
+                    let ponder_token = info.best_move.and_then(|m| {
+                        let token = board2.do_move(m);
+                        let pm = searcher2.probe_tt(board2.hash());
+                        board2.undo_move(token);
+                        pm
+                    });
+
+                    if let Some(pm) = ponder_token {
+                        println!("bestmove {best} ponder {}", move_to_usi(pm));
+                    } else {
+                        println!("bestmove {best}");
+                    }
                     io::stdout().lock().flush().ok();
                 }));
             }
@@ -187,12 +226,55 @@ fn main() {
             }
 
             "ponderhit" => {
-                // Abort ponder search; GUI will follow with a new `go` with real time
+                // Suppress bestmove from dying ponder thread, abort it, then restart
+                // with the original go-ponder time args (opponent's clock hasn't ticked).
+                suppress_bm.store(true, Ordering::Relaxed);
                 if let Some(a) = search_abort.take() {
                     a.store(true, Ordering::Relaxed);
                 }
                 if let Some(h) = search_handle.take() {
                     h.join().ok();
+                }
+                // Reset suppress before launching the real timed search.
+                suppress_bm.store(false, Ordering::Relaxed);
+                if let Some(ref args) = ponder_go_args.take() {
+                    let config = parse_go(args, board.side_to_move, move_overhead_ms, false, multi_pv);
+                    let abort = searcher.abort_flag();
+                    search_abort = Some(abort);
+                    let searcher2 = Arc::clone(&searcher);
+                    let mut board2 = board.clone();
+                    let suppress2 = Arc::clone(&suppress_bm);
+                    search_handle = Some(std::thread::spawn(move || {
+                        let info = searcher2.search(&mut board2, config);
+                        if suppress2.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        let elapsed_ms = info.elapsed.as_millis().max(1) as u64;
+                        let nps = info.nodes.saturating_mul(1000) / elapsed_ms;
+                        if let Some(m) = info.best_move {
+                            println!(
+                                "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
+                                info.depth, info.score, info.nodes, nps, elapsed_ms,
+                                info.hashfull, move_to_usi(m)
+                            );
+                        }
+                        let best = info
+                            .best_move
+                            .map(move_to_usi)
+                            .unwrap_or_else(|| "resign".to_string());
+                        let ponder_token = info.best_move.and_then(|m| {
+                            let token = board2.do_move(m);
+                            let pm = searcher2.probe_tt(board2.hash());
+                            board2.undo_move(token);
+                            pm
+                        });
+                        if let Some(pm) = ponder_token {
+                            println!("bestmove {best} ponder {}", move_to_usi(pm));
+                        } else {
+                            println!("bestmove {best}");
+                        }
+                        io::stdout().lock().flush().ok();
+                    }));
                 }
             }
 
@@ -223,7 +305,7 @@ fn make_searcher(hash_mb: usize) -> Arc<SpeculativeSearcher> {
 
 // ---- Go command time-control parsing ----
 
-fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> SearchConfig {
+fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool, multi_pv: u32) -> SearchConfig {
     let mut btime: Option<u64> = None;
     let mut wtime: Option<u64> = None;
     let mut byoyomi: Option<u64> = None;
@@ -337,6 +419,7 @@ fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> Searc
         max_depth: depth.unwrap_or(50),
         time_limit,
         soft_limit,
+        multi_pv,
     }
 }
 
@@ -354,6 +437,7 @@ mod tests {
             Color::Black,
             0,
             false,
+            1,
         );
         assert!(cfg.time_limit.is_some(), "hard limit should be set");
         assert!(cfg.soft_limit.is_some(), "soft limit should be set");
@@ -370,6 +454,7 @@ mod tests {
             Color::Black,
             0,
             false,
+            1,
         );
         let hard = cfg.time_limit.unwrap().as_millis();
         // base = 3000, hard = 4500
@@ -380,7 +465,7 @@ mod tests {
     fn parse_go_byoyomi_only() {
         // byoyomi 5000, no main time → panic mode, no soft limit
         // byo_safe = 5000, base = 3250 - 0 = 3250, hard = min(4875, 5000) = 4875
-        let cfg = parse_go("byoyomi 5000", Color::Black, 0, false);
+        let cfg = parse_go("byoyomi 5000", Color::Black, 0, false, 1);
         assert!(cfg.time_limit.is_some());
         assert!(cfg.soft_limit.is_none(), "panic mode: no soft limit");
         let hard = cfg.time_limit.unwrap().as_millis();
@@ -390,7 +475,7 @@ mod tests {
     #[test]
     fn parse_go_soft_less_than_hard() {
         // Normal case: ample time, no panic
-        let cfg = parse_go("btime 120000 wtime 120000", Color::Black, 0, false);
+        let cfg = parse_go("btime 120000 wtime 120000", Color::Black, 0, false, 1);
         let hard = cfg.time_limit.unwrap().as_millis();
         let soft = cfg.soft_limit.unwrap().as_millis();
         assert!(soft < hard, "soft={soft} hard={hard}");
@@ -399,14 +484,14 @@ mod tests {
     #[test]
     fn byoyomi_hard_within_overhead() {
         // byoyomi 5000, overhead 300 → hard must be <= byo - overhead = 4700
-        let cfg = parse_go("byoyomi 5000", Color::Black, 300, false);
+        let cfg = parse_go("byoyomi 5000", Color::Black, 300, false, 1);
         let hard = cfg.time_limit.unwrap().as_millis();
         assert!(hard <= 4700, "hard={hard} exceeds byoyomi - overhead");
     }
 
     #[test]
     fn pondering_no_limits() {
-        let cfg = parse_go("btime 60000 wtime 60000 ponder", Color::Black, 50, true);
+        let cfg = parse_go("btime 60000 wtime 60000 ponder", Color::Black, 50, true, 1);
         assert!(cfg.time_limit.is_none());
         assert!(cfg.soft_limit.is_none());
     }
@@ -414,7 +499,7 @@ mod tests {
     #[test]
     fn movetime_overhead_deducted() {
         // movetime 1000, overhead 50 → hard = 950
-        let cfg = parse_go("movetime 1000", Color::Black, 50, false);
+        let cfg = parse_go("movetime 1000", Color::Black, 50, false, 1);
         let hard = cfg.time_limit.unwrap().as_millis();
         assert!(hard <= 950, "hard={hard}");
         assert!(cfg.soft_limit.is_none());

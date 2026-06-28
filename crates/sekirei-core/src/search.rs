@@ -251,6 +251,8 @@ pub struct SearchConfig {
     pub time_limit: Option<Duration>,
     /// Soft limit: exit after completing a depth if elapsed >= soft_limit and bestmove is stable.
     pub soft_limit: Option<Duration>,
+    /// Number of PV lines to return (1 = normal, >1 = MultiPV).
+    pub multi_pv: u32,
 }
 
 impl Default for SearchConfig {
@@ -259,6 +261,7 @@ impl Default for SearchConfig {
             max_depth: 6,
             time_limit: None,
             soft_limit: None,
+            multi_pv: 1,
         }
     }
 }
@@ -336,7 +339,7 @@ impl Searcher {
         let mut prev_best: Option<Move> = None;
 
         for depth in 1..=config.max_depth {
-            let (m, score) = root_search(&state, board, depth, best_score);
+            let (m, score) = root_search(&state, board, depth, best_score, &[]);
 
             if state.abort.load(Ordering::Relaxed) {
                 break;
@@ -381,8 +384,14 @@ fn root_search(
     board: &mut Board,
     depth: u32,
     prev_score: i32,
+    excluded: &[Move],
 ) -> (Option<Move>, i32) {
-    let moves = generate_legal_moves(board);
+    let all_moves = generate_legal_moves(board);
+    let moves: Vec<Move> = if excluded.is_empty() {
+        all_moves
+    } else {
+        all_moves.into_iter().filter(|m| !excluded.contains(m)).collect()
+    };
     if moves.is_empty() {
         return (None, -MATE_SCORE);
     }
@@ -1059,6 +1068,10 @@ pub struct SpecSearchInfo {
     pub spec_hits: u32,
     /// Number of depth iterations where speculation was launched.
     pub spec_total: u32,
+    /// MultiPV results: [(move, score)] ordered best-first. Index 0 == best_move.
+    pub pv_list: Vec<(Move, i32)>,
+    /// Number of depths where bestmove changed (instability indicator).
+    pub bestmove_changes: u32,
 }
 
 /// `SpeculativeSearcher` wraps iterative deepening with preemptive
@@ -1081,6 +1094,11 @@ impl SpeculativeSearcher {
     /// Returns a clone of the abort flag; set to `true` to stop an in-progress search.
     pub fn abort_flag(&self) -> Arc<AtomicBool> {
         self.external_abort.clone()
+    }
+
+    /// Probe the TT for the best move stored at `hash` (used to extract ponder move).
+    pub fn probe_tt(&self, hash: u64) -> Option<Move> {
+        self.tt.probe(hash).and_then(|e| e.mv)
     }
 
     pub fn search(&self, board: &mut Board, config: SearchConfig) -> SpecSearchInfo {
@@ -1110,49 +1128,82 @@ impl SpeculativeSearcher {
         let mut spec_hits = 0u32;
         let mut spec_total = 0u32;
         let mut prev_best: Option<Move> = None;
+        let mut pv_list: Vec<(Move, i32)> = Vec::new();
+        let mut bestmove_changes = 0u32;
+        let use_spec = config.multi_pv == 1;
 
         for depth in 1..=config.max_depth {
-            let mut spec_group = SpecGroup::spawn(board, &spec_state, depth + 1, self.top_n);
-            spec_total += 1;
+            // Speculative search only makes sense for single-PV (predicts opponent's reply to PV[0])
+            let mut spec_group = if use_spec {
+                spec_total += 1;
+                Some(SpecGroup::spawn(board, &spec_state, depth + 1, self.top_n))
+            } else {
+                None
+            };
 
-            let (m, score) = root_search(&state, board, depth, best_score);
+            // MultiPV: run N root searches per depth, excluding previously found moves
+            let mut depth_pv: Vec<(Move, i32)> = Vec::new();
+            let mut excluded: Vec<Move> = Vec::new();
+            for _ in 0..config.multi_pv {
+                let (m, score) = root_search(&state, board, depth, best_score, &excluded);
+                if state.abort.load(Ordering::Relaxed) {
+                    break;
+                }
+                match m {
+                    Some(mv) => { depth_pv.push((mv, score)); excluded.push(mv); }
+                    None => break,
+                }
+            }
+            let m = depth_pv.first().map(|&(mv, _)| mv);
+            let score = depth_pv.first().map(|&(_, s)| s).unwrap_or(NEG_INF);
 
             let timed_out = state.abort.load(Ordering::Relaxed);
 
-            // If time expired, cancel ALL spec tasks (including promoted winner) immediately
             if timed_out {
                 global_abort.store(true, Ordering::Relaxed);
             }
 
-            if let Some(winner) = m {
-                let hit = spec_group.poll(winner).is_some();
+            if let Some(ref mut sg) = spec_group
+                && let Some(winner) = m
+            {
+                let hit = sg.poll(winner).is_some();
                 if hit {
                     spec_hits += 1;
                 }
-                // Only promote (keep running) if we're continuing the search
                 if !timed_out {
-                    spec_group.promote(winner);
+                    sg.promote(winner);
                 }
             }
-            drop(spec_group); // cancels all non-promoted tasks; global_abort cancels any stragglers
+            drop(spec_group);
 
             if timed_out {
                 break;
             }
 
-            best_move = m.or(best_move);
-            best_score = score;
-            done_depth = depth;
+            if !depth_pv.is_empty() {
+                pv_list = depth_pv;
+                best_move = m.or(best_move);
+                best_score = score;
+                done_depth = depth;
+            }
 
             if score.abs() >= MATE_SCORE - 1000 {
                 break;
             }
 
-            // Soft limit: exit gracefully after a completed depth when bestmove is stable
+            if best_move != prev_best && depth >= 3 {
+                bestmove_changes += 1;
+            }
+
+            // Soft limit: exit after a completed depth when bestmove is stable.
+            // ponytail: 1.5x extension on instability; tune if LOS drops
+            let effective_soft = if best_move != prev_best && depth >= 3 {
+                config.soft_limit.map(|s| s.mul_f32(1.5))
+            } else {
+                config.soft_limit
+            };
             if depth >= 2
-                && config
-                    .soft_limit
-                    .is_some_and(|soft| state.start.elapsed() >= soft)
+                && effective_soft.is_some_and(|soft| state.start.elapsed() >= soft)
                 && best_move == prev_best
             {
                 break;
@@ -1171,6 +1222,8 @@ impl SpeculativeSearcher {
             hashfull: self.tt.hashfull(),
             spec_hits,
             spec_total,
+            pv_list,
+            bestmove_changes,
         }
     }
 }

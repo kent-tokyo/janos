@@ -310,6 +310,7 @@ impl CsaClient {
                 max_depth: self.config.max_depth,
                 time_limit,
                 soft_limit: None,
+                multi_pv: 1,
             },
         );
 

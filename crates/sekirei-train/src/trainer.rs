@@ -199,6 +199,7 @@ impl Trainer {
                     max_depth: label_depth,
                     time_limit: None,
                     soft_limit: None,
+                    multi_pv: 1,
                 };
                 let mut b = sample.board.clone();
                 let cp = self.searcher.search(&mut b, config).score;
@@ -229,6 +230,7 @@ impl Trainer {
                 max_depth: label_depth,
                 time_limit: None,
                 soft_limit: None,
+                multi_pv: 1,
             };
             let mut b = sample.board.clone();
             let info = self.searcher.search(&mut b, config);
@@ -316,6 +318,7 @@ impl Trainer {
                 max_depth: label_depth,
                 time_limit: None,
                 soft_limit: None,
+                multi_pv: 1,
             };
             let info = self.searcher.search(&mut board, config);
             let teacher = (info.score as f32).clamp(-600.0, 600.0);

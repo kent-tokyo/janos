@@ -298,6 +298,7 @@ mod tests {
                 max_depth: 4,
                 time_limit: None,
                 soft_limit: None,
+                multi_pv: 1,
             },
         );
         assert!(info.best_move.is_some(), "search returned no move");
@@ -317,6 +318,7 @@ mod tests {
             max_depth: 4,
             time_limit: None,
             soft_limit: None,
+            multi_pv: 1,
         };
 
         // First search (parallel, rayon uses all cores)
@@ -339,6 +341,7 @@ mod tests {
             max_depth: 4,
             time_limit: None,
             soft_limit: None,
+            multi_pv: 1,
         };
 
         let r1 = Searcher::new(tt.clone()).search(&mut board, cfg());
@@ -375,6 +378,7 @@ mod tests {
                 max_depth: depth,
                 time_limit: None,
                 soft_limit: None,
+                multi_pv: 1,
             },
         );
 
@@ -384,6 +388,7 @@ mod tests {
                 max_depth: depth,
                 time_limit: None,
                 soft_limit: None,
+                multi_pv: 1,
             },
         );
 

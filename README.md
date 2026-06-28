@@ -166,14 +166,21 @@ bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weigh
 DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
 # Tier 3 — Deep: re-label borderline positions at depth 4,6,8 then retrain
+# Step 1: score borderline positions at higher depth into a separate file
 quietset select data/stage3/scored.jsonl --class borderline \
   | shogiesa label --engine ./target/release/sekirei --depths 4,6,8 \
-  | quietset score --profile game-ai >> data/stage3/scored.jsonl
-DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
+  | quietset score --profile game-ai \
+  > data/stage3/deep_scored.jsonl
+# Step 2: retrain with the deep labels merged in via EXTRA_SCORED
+EXTRA_SCORED=data/stage3/deep_scored.jsonl \
+DEPTHS=2,4,6 \
+bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
 ```
 
-The script saves intermediate files in `data/stage1/`, `data/stage2/`, `data/stage3/` and match
-results in `results/`. To run stages manually:
+The script saves intermediate files under `data/runs/<timestamp>/` (override with `RUN_DIR=...`)
+and match results in `results/`. Each run also writes a `manifest.json` linking weights to their
+training parameters. Available env overrides: `DEPTHS`, `GAMES`, `MIN_PLY`, `MAX_PLY`, `RUN_DIR`,
+`EXTRA_SCORED`. To run stages manually:
 
 ```bash
 # Stage 1: extract
@@ -239,7 +246,8 @@ floodgate status: active testing; rating is currently volatile.
 
 - NNUE weights are not bundled; train from floodgate CSA data or use the material eval fallback
 - `setoption EvalFile` supported; in-game weight reload requires engine restart
-- No pondering support
+- Pondering: supported (`go ponder` / `ponderhit`); enable via `setoption name Ponder value true`
+- MultiPV: supported via `setoption name MultiPV value N`
 
 ## Name Origin
 

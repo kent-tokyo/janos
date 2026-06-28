@@ -164,13 +164,20 @@ bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weigh
 DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
 # Tier 3 — ディープ: 境界局面のみ depth 4,6,8 で再ラベルして再訓練
+# Step 1: 境界局面を高 depth でスコアして別ファイルに保存
 quietset select data/stage3/scored.jsonl --class borderline \
   | shogiesa label --engine ./target/release/sekirei --depths 4,6,8 \
-  | quietset score --profile game-ai >> data/stage3/scored.jsonl
-DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
+  | quietset score --profile game-ai \
+  > data/stage3/deep_scored.jsonl
+# Step 2: EXTRA_SCORED でマージしながら再訓練
+EXTRA_SCORED=data/stage3/deep_scored.jsonl \
+DEPTHS=2,4,6 \
+bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
 ```
 
-中間ファイルは `data/stage1/`、`data/stage2/`、`data/stage3/` に保存されます。手動で各ステージを実行する場合：
+中間ファイルは `data/runs/<タイムスタンプ>/` 以下に保存されます（`RUN_DIR=...` で変更可）。
+各実行後に `manifest.json` が生成され、重みとパラメータが紐付けられます。
+環境変数オーバーライド: `DEPTHS`, `GAMES`, `MIN_PLY`, `MAX_PLY`, `RUN_DIR`, `EXTRA_SCORED`。手動で各ステージを実行する場合：
 
 ```bash
 # Stage 1: 局面抽出
@@ -235,7 +242,8 @@ floodgate: 実戦テスト中（レートは計測中）。
 
 - NNUE 重みファイルは同梱なし。floodgate CSA データから訓練するかマテリアル評価にフォールバック
 - `setoption EvalFile` 対応済み。ゲーム中の重み再ロードにはエンジン再起動が必要
-- Pondering 未対応
+- Pondering 対応済み（`go ponder` / `ponderhit`）。`setoption name Ponder value true` で有効化
+- MultiPV 対応済み（`setoption name MultiPV value N`）
 
 ## 名前の由来
 

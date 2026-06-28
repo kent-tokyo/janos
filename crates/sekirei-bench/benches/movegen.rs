@@ -39,6 +39,7 @@ fn bench_search_depth4(c: &mut Criterion) {
                     max_depth: 4,
                     time_limit: None,
                     soft_limit: None,
+                    multi_pv: 1,
                 },
             )
         });
