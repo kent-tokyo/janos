@@ -413,7 +413,7 @@ impl Trainer {
         }
     }
 
-    pub fn reset_stats(&mut self) {
+    pub fn reset_epoch_stats(&mut self) {
         self.total_loss = 0.0;
         self.total_count = 0;
         self.total_weight = 0.0;

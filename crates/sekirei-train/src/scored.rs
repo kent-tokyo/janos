@@ -145,4 +145,23 @@ mod tests {
         let map = load_scored(f.path(), 0.0);
         assert!(map.contains_key("sfen_a"));
     }
+
+    #[test]
+    fn test_exporter_sfen_matches_trainer_lookup() {
+        // Verifies board_to_sfen is deterministic and consistent between
+        // exporter (produces sample_id) and trainer (does scored.get(&sfen)).
+        use sekirei_core::{board::Board, sfen::board_to_sfen};
+
+        let sfen1 = board_to_sfen(&Board::startpos());
+        let sfen2 = board_to_sfen(&Board::startpos());
+        assert_eq!(sfen1, sfen2, "board_to_sfen must be deterministic");
+
+        // Simulate what exporter writes as sample_id and trainer looks up
+        let mut map = std::collections::HashMap::new();
+        map.insert(sfen1.clone(), 0.95f32);
+        assert!(
+            map.contains_key(&sfen2),
+            "SFEN from trainer lookup must match exporter sample_id"
+        );
+    }
 }

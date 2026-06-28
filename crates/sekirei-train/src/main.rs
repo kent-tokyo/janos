@@ -299,7 +299,7 @@ fn main() {
     for epoch in 1..=args.epochs {
         // Step-decay: halve lr each epoch (epoch1=0.001, epoch2=0.0005, epoch3=0.00025)
         trainer.lr = 0.001_f32 * 0.5_f32.powi((epoch - 1) as i32);
-        trainer.reset_stats();
+        trainer.reset_epoch_stats();
         eprintln!("Epoch {epoch}/{} — lr = {:.6}", args.epochs, trainer.lr);
 
         for (i, game) in games.iter().enumerate() {
@@ -336,18 +336,38 @@ fn main() {
             }
         }
 
-        let avg_weight = if trainer.total_count > 0 {
-            trainer.total_weight / trainer.total_count as f64
-        } else {
-            1.0
-        };
+        if !scored.is_empty() {
+            let total_seen = trainer.total_count + trainer.dropped_missing;
+            let missing_rate = if total_seen > 0 {
+                trainer.dropped_missing as f64 / total_seen as f64
+            } else {
+                0.0
+            };
+            let avg_weight = if trainer.total_count > 0 {
+                trainer.total_weight / trainer.total_count as f64
+            } else {
+                1.0
+            };
+            eprintln!(
+                "  quietset: entries={} matched={} dropped_missing={} missing_rate={:.1}% avg_weight={:.3}",
+                scored.len(),
+                trainer.total_count,
+                trainer.dropped_missing,
+                missing_rate * 100.0,
+                avg_weight,
+            );
+            if missing_rate > 0.5 {
+                eprintln!(
+                    "  warn: missing_rate={:.1}% is high — SFEN mismatch or incomplete scored file?",
+                    missing_rate * 100.0
+                );
+            }
+        }
         eprintln!(
-            "Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}  dropped_missing = {}  avg_weight = {:.3}",
+            "Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}",
             args.epochs,
             trainer.avg_loss(),
             trainer.total_count,
-            trainer.dropped_missing,
-            avg_weight,
         );
 
         // Save checkpoint after each epoch

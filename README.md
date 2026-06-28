@@ -138,11 +138,19 @@ cargo run --release -p sekirei-train -- \
   --games /path/to/csa_dir --output weights_weighted.bin \
   --scored scored.jsonl --stability-weighted
 
-# 4. Compare with match-runner
+# 4. Baseline vs filtered vs weighted (200+ games each)
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_baseline.bin --epochs 3
+
 cargo run --release -p sekirei-match-runner -- \
   --engine1 "./target/release/sekirei weights_quietset.bin" \
-  --engine2 "./target/release/sekirei weights.bin" \
-  --games 200 --byoyomi 1000
+  --engine2 "./target/release/sekirei weights_baseline.bin" \
+  --games 200 --byoyomi 1000 --json keep_vs_baseline.json
+
+cargo run --release -p sekirei-match-runner -- \
+  --engine1 "./target/release/sekirei weights_weighted.bin" \
+  --engine2 "./target/release/sekirei weights_baseline.bin" \
+  --games 200 --byoyomi 1000 --json weighted_vs_baseline.json
 ```
 
 ## Benchmarks

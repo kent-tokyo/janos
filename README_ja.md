@@ -135,6 +135,20 @@ cargo run --release -p sekirei-train -- \
 cargo run --release -p sekirei-train -- \
   --games /path/to/csa_dir --output weights_weighted.bin \
   --scored scored.jsonl --stability-weighted
+
+# 4. baseline / keep-only / weighted の比較（各 200 局以上推奨）
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_baseline.bin --epochs 3
+
+cargo run --release -p sekirei-match-runner -- \
+  --engine1 "./target/release/sekirei weights_quietset.bin" \
+  --engine2 "./target/release/sekirei weights_baseline.bin" \
+  --games 200 --byoyomi 1000 --json keep_vs_baseline.json
+
+cargo run --release -p sekirei-match-runner -- \
+  --engine1 "./target/release/sekirei weights_weighted.bin" \
+  --engine2 "./target/release/sekirei weights_baseline.bin" \
+  --games 200 --byoyomi 1000 --json weighted_vs_baseline.json
 ```
 
 ## ベンチマーク
