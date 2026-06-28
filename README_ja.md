@@ -113,6 +113,30 @@ cargo run --release -p sekirei-match-runner -- \
 cargo run --release -p sekirei-train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
+## Quietset を使った NNUE 訓練
+
+[quietset](https://github.com/kent-tokyo/quietset) は、複数の探索深度でのラベル安定性を評価し、ノイズの多い教師ラベルを除外します。
+
+```bash
+# 1. 複数深度で観測データを出力
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --export observations.jsonl \
+  --depths 2,4,6,8 --quiet --min-ply 20 --min-rate 1800
+
+# 2. 安定度スコアリング
+quietset score observations.jsonl > scored.jsonl
+
+# 3a. 安定局面のみで学習（stability >= 0.85）
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_quietset.bin \
+  --scored scored.jsonl --min-stability 0.85
+
+# 3b. または stability_score でロスを重み付け
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_weighted.bin \
+  --scored scored.jsonl --stability-weighted
+```
+
 ## ベンチマーク
 
 Apple M4 Pro での実測値（`cargo build --release`、`target-cpu=native`）。

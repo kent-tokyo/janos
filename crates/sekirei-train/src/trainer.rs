@@ -131,6 +131,8 @@ pub struct Trainer {
     pub weights: TrainWeights,
     pub total_loss: f64,
     pub total_count: u64,
+    pub total_weight: f64,    // sum of weights (for avg_weight log)
+    pub dropped_missing: u64, // positions skipped (not in scored map)
     pub lr: f32,
     searcher: Searcher,
 }
@@ -142,6 +144,8 @@ impl Trainer {
             weights: TrainWeights::new(),
             total_loss: 0.0,
             total_count: 0,
+            total_weight: 0.0,
+            dropped_missing: 0,
             lr: 0.001,
             searcher: Searcher::new(tt),
         }
@@ -194,6 +198,7 @@ impl Trainer {
                         }
                     }
                     None => {
+                        self.dropped_missing += 1;
                         board.do_move(mv);
                         continue; // not in keep set
                     }
@@ -271,6 +276,7 @@ impl Trainer {
         let err = score - teacher;
         self.total_loss += (weight as f64) * (err * err) as f64;
         self.total_count += 1;
+        self.total_weight += weight as f64;
 
         // ── Backward pass ─────────────────────────────────────────────────────
 
@@ -409,6 +415,8 @@ impl Trainer {
     pub fn reset_stats(&mut self) {
         self.total_loss = 0.0;
         self.total_count = 0;
+        self.total_weight = 0.0;
+        self.dropped_missing = 0;
     }
 }
 

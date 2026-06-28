@@ -44,6 +44,7 @@ struct Args {
     scored_path: Option<PathBuf>, // --scored: quietset scored JSONL
     min_stability: f32,           // --min-stability (default: 0.85)
     stability_weighted: bool,     // --stability-weighted
+    label_threshold_cp: i32,      // --label-threshold-cp (default: 120)
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -62,6 +63,7 @@ fn parse_args() -> Result<Args, String> {
     let mut scored_path: Option<PathBuf> = None;
     let mut min_stability = 0.85f32;
     let mut stability_weighted = false;
+    let mut label_threshold_cp = 120i32;
     let mut i = 0;
 
     while i < argv.len() {
@@ -138,6 +140,12 @@ fn parse_args() -> Result<Args, String> {
             "--stability-weighted" => {
                 stability_weighted = true;
             }
+            "--label-threshold-cp" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    label_threshold_cp = s.parse().unwrap_or(120);
+                }
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -162,6 +170,7 @@ fn parse_args() -> Result<Args, String> {
         scored_path,
         min_stability,
         stability_weighted,
+        label_threshold_cp,
     })
 }
 
@@ -184,6 +193,9 @@ fn print_usage() {
     eprintln!("  --scored <path>     quietset scored JSONL — train only stable samples");
     eprintln!("  --min-stability <f> Minimum stability_score to include (default: 0.85)");
     eprintln!("  --stability-weighted  Weight loss by stability_score instead of binary keep/drop");
+    eprintln!(
+        "  --label-threshold-cp <n>  Score threshold for adv/equal/disadv label (default: 120)"
+    );
     eprintln!();
     eprintln!("Data: download floodgate archives from http://wdoor.c.u-tokyo.ac.jp/shogi/");
 }
@@ -268,6 +280,7 @@ fn main() {
                 args.quiet,
                 args.min_ply,
                 &args.depths,
+                args.label_threshold_cp,
                 &mut out,
             );
         }
@@ -323,11 +336,18 @@ fn main() {
             }
         }
 
+        let avg_weight = if trainer.total_count > 0 {
+            trainer.total_weight / trainer.total_count as f64
+        } else {
+            1.0
+        };
         eprintln!(
-            "Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}",
+            "Epoch {epoch}/{}: avg_loss = {:.4}  samples = {}  dropped_missing = {}  avg_weight = {:.3}",
             args.epochs,
             trainer.avg_loss(),
-            trainer.total_count
+            trainer.total_count,
+            trainer.dropped_missing,
+            avg_weight,
         );
 
         // Save checkpoint after each epoch

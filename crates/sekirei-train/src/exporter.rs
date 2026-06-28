@@ -17,6 +17,7 @@ pub fn export_game<W: Write>(
     quiet: bool,
     min_ply: usize,
     depths: &[u32],
+    label_threshold_cp: i32,
     out: &mut W,
 ) {
     let searcher = Searcher::new(Tt::new(4));
@@ -42,9 +43,9 @@ pub fn export_game<W: Write>(
             };
             let info = searcher.search(&mut board, config);
             let score = info.score as f64 / 600.0;
-            let label = if info.score > 120 {
+            let label = if info.score > label_threshold_cp {
                 "adv"
-            } else if info.score < -120 {
+            } else if info.score < -label_threshold_cp {
                 "disadv"
             } else {
                 "equal"

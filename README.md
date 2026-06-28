@@ -115,6 +115,36 @@ cargo run --release -p sekirei-match-runner -- \
 cargo run --release -p sekirei-train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
+## NNUE Training with Quietset
+
+[quietset](https://github.com/kent-tokyo/quietset) filters training positions by label stability across multiple search depths, reducing noisy teacher labels.
+
+```bash
+# 1. Export multi-depth observations
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --export observations.jsonl \
+  --depths 2,4,6,8 --quiet --min-ply 20 --min-rate 1800
+
+# 2. Score label stability
+quietset score observations.jsonl > scored.jsonl
+
+# 3a. Train with stable samples only (keep where stability >= 0.85)
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_quietset.bin \
+  --scored scored.jsonl --min-stability 0.85
+
+# 3b. Or weight loss by stability_score (review positions contribute less)
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights_weighted.bin \
+  --scored scored.jsonl --stability-weighted
+
+# 4. Compare with match-runner
+cargo run --release -p sekirei-match-runner -- \
+  --engine1 "./target/release/sekirei weights_quietset.bin" \
+  --engine2 "./target/release/sekirei weights.bin" \
+  --games 200 --byoyomi 1000
+```
+
 ## Benchmarks
 
 Measured on Apple M4 Pro (`cargo build --release`, `target-cpu=native`).

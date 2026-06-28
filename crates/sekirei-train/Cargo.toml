@@ -12,3 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 sekirei-core = { path = "../sekirei-core", version = "0.2.3" }
+
+[dev-dependencies]
+tempfile = "3"
