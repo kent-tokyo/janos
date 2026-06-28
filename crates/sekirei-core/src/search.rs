@@ -396,6 +396,11 @@ fn root_search(
         return (None, -MATE_SCORE);
     }
 
+    // Single legal move: return immediately without searching
+    if moves.len() == 1 {
+        return (Some(moves[0]), 0);
+    }
+
     let tt_mv = state.tt.probe(board.hash()).and_then(|e| e.mv);
     let killers = state.killers.get(0);
     let ordered = order_moves(
@@ -407,6 +412,54 @@ fn root_search(
         &state.history,
         board.side_to_move,
     );
+
+    // Mate-in-1: check each root move for immediate checkmate before deep search
+    for &m in &ordered {
+        let tok = board.do_move(m);
+        let mated = generate_legal_moves(board).is_empty()
+            && is_in_check(board, board.side_to_move);
+        board.undo_move(tok);
+        if mated {
+            return (Some(m), MATE_SCORE - 1);
+        }
+    }
+
+    // Opponent safety: at shallow depths, filter out root moves that immediately allow
+    // opponent mate-in-1. Gated on depth <= 2 to bound the O(N×M²) cost.
+    // At depth >= 3 the normal alpha-beta search catches these situations anyway.
+    let ordered: Vec<Move> = if depth <= 2 {
+        let mut safe_moves = Vec::new();
+        let mut has_unsafe = false;
+        for &m in &ordered {
+            let tok = board.do_move(m);
+            let mut opp_can_mate = false;
+            'opp: for opp_m in generate_legal_moves(board) {
+                let tok2 = board.do_move(opp_m);
+                if generate_legal_moves(board).is_empty()
+                    && is_in_check(board, board.side_to_move)
+                {
+                    opp_can_mate = true;
+                }
+                board.undo_move(tok2);
+                if opp_can_mate {
+                    break 'opp;
+                }
+            }
+            board.undo_move(tok);
+            if opp_can_mate {
+                has_unsafe = true;
+            } else {
+                safe_moves.push(m);
+            }
+        }
+        if has_unsafe && !safe_moves.is_empty() {
+            safe_moves
+        } else {
+            ordered
+        }
+    } else {
+        ordered
+    };
 
     // Aspiration window: start tight around prev_score; widen on fail
     let use_asp = depth >= 2 && prev_score.abs() < MATE_SCORE - 1000;
@@ -1006,30 +1059,42 @@ fn quiescence(
         return 0;
     }
 
-    // Stand-pat: static eval is a lower bound (we can always choose to stand still)
-    let stand_pat = evaluate(board);
-    if stand_pat >= beta {
-        return stand_pat;
-    }
-    if stand_pat > alpha {
-        alpha = stand_pat;
+    let in_check = is_in_check(board, board.side_to_move);
+
+    // Stand-pat and delta pruning only apply when not in check.
+    // In check the side to move has no quiet option, so stand-pat is invalid.
+    if !in_check {
+        let stand_pat = evaluate(board);
+        if stand_pat >= beta {
+            return stand_pat;
+        }
+        if stand_pat > alpha {
+            alpha = stand_pat;
+        }
+        // Delta Pruning: if even capturing the highest-value piece cannot improve alpha, skip.
+        // Ryu (promoted rook) ≈ 1300cp is the maximum gain from a single capture.
+        const DELTA_MARGIN: i32 = 1_300;
+        if stand_pat + DELTA_MARGIN < alpha {
+            return alpha;
+        }
     }
 
-    // Delta Pruning: if even capturing the highest-value piece cannot improve alpha, skip.
-    // Ryu (promoted rook) ≈ 1300cp is the maximum gain from a single capture.
-    const DELTA_MARGIN: i32 = 1_300;
-    if stand_pat + DELTA_MARGIN < alpha {
-        return alpha;
+    let moves = if in_check {
+        generate_legal_moves(board) // must escape check; all legal moves required
+    } else {
+        generate_legal_captures(board)
+    };
+
+    if moves.is_empty() {
+        return if in_check {
+            -MATE_SCORE + ply as i32 // checkmate
+        } else {
+            alpha
+        };
     }
 
-    let captures = generate_legal_captures(board);
-    if captures.is_empty() {
-        return alpha;
-    }
-
-    // Order captures by MVV-LVA
-    let mut ordered = captures;
-    // Sort captures by SEE: biggest gain first (cached key avoids repeated SEE calls)
+    // Sort by SEE: biggest gain first
+    let mut ordered = moves;
     ordered.sort_by_cached_key(|&m| -see_score(board, m));
 
     for m in ordered {
@@ -1045,6 +1110,47 @@ fn quiescence(
         }
         if score > alpha {
             alpha = score;
+        }
+    }
+
+    // Quiet checks: at the shallowest qsearch level, search a handful of
+    // non-capture moves that give check and have non-negative SEE.
+    // Drops that give check (e.g. 飛打ち王手) are included naturally.
+    if !in_check && ply == 0 {
+        const MAX_QCHECKS: usize = 4;
+        let mut qcheck_count = 0;
+        for m in generate_legal_moves(board) {
+            // Skip captures — already handled above
+            if m.from.is_some() && board.piece_at(m.to).is_some() {
+                continue;
+            }
+            // Skip moves with negative SEE (losing check attempts)
+            if see_score(board, m) < 0 {
+                continue;
+            }
+            // Test if this move gives check
+            let tok = board.do_move(m);
+            let gives_check = is_in_check(board, board.side_to_move);
+            if !gives_check {
+                board.undo_move(tok);
+                continue;
+            }
+            let score = -quiescence(state, board, -beta, -alpha, ply + 1);
+            board.undo_move(tok);
+
+            if state.abort.load(Ordering::Relaxed) {
+                return 0;
+            }
+            if score >= beta {
+                return score;
+            }
+            if score > alpha {
+                alpha = score;
+            }
+            qcheck_count += 1;
+            if qcheck_count >= MAX_QCHECKS {
+                break;
+            }
         }
     }
 
