@@ -309,6 +309,7 @@ impl CsaClient {
             SearchConfig {
                 max_depth: self.config.max_depth,
                 time_limit,
+                soft_limit: None,
             },
         );
 

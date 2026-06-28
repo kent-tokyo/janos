@@ -249,6 +249,8 @@ impl HistoryTable {
 pub struct SearchConfig {
     pub max_depth: u32,
     pub time_limit: Option<Duration>,
+    /// Soft limit: exit after completing a depth if elapsed >= soft_limit and bestmove is stable.
+    pub soft_limit: Option<Duration>,
 }
 
 impl Default for SearchConfig {
@@ -256,6 +258,7 @@ impl Default for SearchConfig {
         SearchConfig {
             max_depth: 6,
             time_limit: None,
+            soft_limit: None,
         }
     }
 }
@@ -1095,6 +1098,7 @@ impl SpeculativeSearcher {
         let mut done_depth = 0u32;
         let mut spec_hits = 0u32;
         let mut spec_total = 0u32;
+        let mut prev_best: Option<Move> = None;
 
         for depth in 1..=config.max_depth {
             let mut spec_group = SpecGroup::spawn(board, &spec_state, depth + 1, self.top_n);
@@ -1132,6 +1136,17 @@ impl SpeculativeSearcher {
             if score.abs() >= MATE_SCORE - 1000 {
                 break;
             }
+
+            // Soft limit: exit gracefully after a completed depth when bestmove is stable
+            if depth >= 2
+                && config
+                    .soft_limit
+                    .is_some_and(|soft| state.start.elapsed() >= soft)
+                && best_move == prev_best
+            {
+                break;
+            }
+            prev_best = best_move;
         }
 
         global_abort.store(true, Ordering::Relaxed);

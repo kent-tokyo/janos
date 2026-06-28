@@ -38,6 +38,7 @@ fn bench_search_depth4(c: &mut Criterion) {
                 SearchConfig {
                     max_depth: 4,
                     time_limit: None,
+                    soft_limit: None,
                 },
             )
         });

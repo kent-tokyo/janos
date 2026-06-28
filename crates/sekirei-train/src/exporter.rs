@@ -40,6 +40,7 @@ pub fn export_game<W: Write>(
             let config = SearchConfig {
                 max_depth: depth,
                 time_limit: None,
+                soft_limit: None,
             };
             let info = searcher.search(&mut board, config);
             let score = info.score as f64 / 600.0;

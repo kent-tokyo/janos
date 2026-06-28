@@ -227,6 +227,9 @@ fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> Searc
     let mut btime: Option<u64> = None;
     let mut wtime: Option<u64> = None;
     let mut byoyomi: Option<u64> = None;
+    let mut binc: Option<u64> = None;
+    let mut winc: Option<u64> = None;
+    let mut movestogo: Option<u64> = None;
     let mut movetime: Option<u64> = None;
     let mut depth: Option<u32> = None;
     let mut infinite = false;
@@ -247,6 +250,18 @@ fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> Searc
                 i += 1;
                 byoyomi = tokens.get(i).and_then(|s| s.parse().ok());
             }
+            "binc" => {
+                i += 1;
+                binc = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "winc" => {
+                i += 1;
+                winc = tokens.get(i).and_then(|s| s.parse().ok());
+            }
+            "movestogo" => {
+                i += 1;
+                movestogo = tokens.get(i).and_then(|s| s.parse().ok());
+            }
             "movetime" => {
                 i += 1;
                 movetime = tokens.get(i).and_then(|s| s.parse().ok());
@@ -265,38 +280,112 @@ fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> Searc
 
     let has_clock = btime.is_some() || wtime.is_some() || byoyomi.is_some() || movetime.is_some();
 
-    let time_limit = if infinite || pondering {
-        None
+    let (time_limit, soft_limit) = if infinite || pondering {
+        (None, None)
     } else if let Some(mt) = movetime {
-        Some(Duration::from_millis(
-            mt.saturating_sub(overhead_ms).max(50),
-        ))
+        (
+            Some(Duration::from_millis(
+                mt.saturating_sub(overhead_ms).max(50),
+            )),
+            None,
+        )
     } else if depth.is_some() && !has_clock {
-        None // pure depth search — no time cap
+        (None, None) // pure depth search — no time cap
     } else if has_clock {
         let our_time = match side {
             Color::Black => btime.unwrap_or(0),
             Color::White => wtime.unwrap_or(0),
         };
+        let increment = match side {
+            Color::Black => binc.unwrap_or(0),
+            Color::White => winc.unwrap_or(0),
+        };
         let byo_ms = byoyomi.unwrap_or(0);
-        // Use a tighter divisor when time is low to avoid overspending
-        let divisor = if our_time < 30_000 { 15 } else { 30 };
-        let from_main = if our_time > 0 { our_time / divisor } else { 0 };
+        let effective_time = our_time.saturating_add(increment);
+        let moves_left = movestogo.unwrap_or(30).max(1);
+        let from_main = effective_time / moves_left;
         let from_byo = byo_ms * 13 / 20;
         // Panic mode: if under 5 s and byoyomi exists, lean on byoyomi only
-        let alloc = if our_time < 5_000 && byo_ms > 0 {
+        let panic = our_time < 5_000 && byo_ms > 0;
+        let base = if panic {
             from_byo
         } else {
             from_main.max(from_byo)
         };
-        let alloc = alloc.saturating_sub(overhead_ms).max(50);
-        Some(Duration::from_millis(alloc))
+        let base = base.saturating_sub(overhead_ms).max(50);
+        let hard_ms = (base * 3 / 2).max(byo_ms).max(50);
+        let soft_ms = base * 4 / 5;
+        let hard = Some(Duration::from_millis(hard_ms));
+        let soft = if !panic {
+            Some(Duration::from_millis(soft_ms))
+        } else {
+            None
+        };
+        (hard, soft)
     } else {
-        None // bare `go` with no args → infinite
+        (None, None) // bare `go` with no args → infinite
     };
 
     SearchConfig {
         max_depth: depth.unwrap_or(50),
         time_limit,
+        soft_limit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sekirei_core::color::Color;
+
+    #[test]
+    fn parse_go_binc_winc() {
+        // Black has 60s + 1s increment: effective_time = 61000, moves_left=30
+        // base = 61000/30 = 2033, hard = 2033*3/2 = 3049, soft = 2033*4/5 = 1626
+        let cfg = parse_go(
+            "btime 60000 wtime 60000 binc 1000 winc 1000",
+            Color::Black,
+            0,
+            false,
+        );
+        assert!(cfg.time_limit.is_some(), "hard limit should be set");
+        assert!(cfg.soft_limit.is_some(), "soft limit should be set");
+        let hard = cfg.time_limit.unwrap().as_millis();
+        let soft = cfg.soft_limit.unwrap().as_millis();
+        assert!(soft < hard, "soft_limit must be less than hard time_limit");
+    }
+
+    #[test]
+    fn parse_go_movestogo() {
+        // 60s, movestogo=20 → from_main = 60000/20 = 3000
+        let cfg = parse_go(
+            "btime 60000 wtime 60000 movestogo 20",
+            Color::Black,
+            0,
+            false,
+        );
+        let hard = cfg.time_limit.unwrap().as_millis();
+        // base = 3000, hard = 4500
+        assert!((hard as i64 - 4500).abs() < 100, "hard={hard}");
+    }
+
+    #[test]
+    fn parse_go_byoyomi_only() {
+        // byoyomi 5000, no main time → from_byo = 5000*13/20 = 3250
+        // base = 3250, hard = max(3250*3/2, 5000) = 5000
+        let cfg = parse_go("byoyomi 5000", Color::Black, 0, false);
+        assert!(cfg.time_limit.is_some());
+        // no soft limit when panic mode is off and our_time=0
+        // panic = (0 < 5000 && 5000 > 0) = true → soft = None
+        assert!(cfg.soft_limit.is_none(), "panic mode: no soft limit");
+    }
+
+    #[test]
+    fn parse_go_soft_less_than_hard() {
+        // Normal case: ample time, no panic
+        let cfg = parse_go("btime 120000 wtime 120000", Color::Black, 0, false);
+        let hard = cfg.time_limit.unwrap().as_millis();
+        let soft = cfg.soft_limit.unwrap().as_millis();
+        assert!(soft < hard, "soft={soft} hard={hard}");
     }
 }

@@ -297,6 +297,7 @@ mod tests {
             SearchConfig {
                 max_depth: 4,
                 time_limit: None,
+                soft_limit: None,
             },
         );
         assert!(info.best_move.is_some(), "search returned no move");
@@ -315,6 +316,7 @@ mod tests {
         let cfg = || SearchConfig {
             max_depth: 4,
             time_limit: None,
+            soft_limit: None,
         };
 
         // First search (parallel, rayon uses all cores)
@@ -336,6 +338,7 @@ mod tests {
         let cfg = || SearchConfig {
             max_depth: 4,
             time_limit: None,
+            soft_limit: None,
         };
 
         let r1 = Searcher::new(tt.clone()).search(&mut board, cfg());
@@ -371,6 +374,7 @@ mod tests {
             SearchConfig {
                 max_depth: depth,
                 time_limit: None,
+                soft_limit: None,
             },
         );
 
@@ -379,6 +383,7 @@ mod tests {
             SearchConfig {
                 max_depth: depth,
                 time_limit: None,
+                soft_limit: None,
             },
         );
 
