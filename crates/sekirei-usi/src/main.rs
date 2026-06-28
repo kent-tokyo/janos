@@ -313,7 +313,14 @@ fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool) -> Searc
             from_main.max(from_byo)
         };
         let base = base.saturating_sub(overhead_ms).max(50);
-        let hard_ms = (base * 3 / 2).max(byo_ms).max(50);
+        // Cap hard limit at byoyomi - overhead to avoid time-loss on byoyomi clocks
+        let byo_safe = byo_ms.saturating_sub(overhead_ms).max(50);
+        let hard_ms = if byo_ms > 0 {
+            (base * 3 / 2).min(byo_safe)
+        } else {
+            base * 3 / 2
+        }
+        .max(50);
         let soft_ms = base * 4 / 5;
         let hard = Some(Duration::from_millis(hard_ms));
         let soft = if !panic {
@@ -371,13 +378,13 @@ mod tests {
 
     #[test]
     fn parse_go_byoyomi_only() {
-        // byoyomi 5000, no main time → from_byo = 5000*13/20 = 3250
-        // base = 3250, hard = max(3250*3/2, 5000) = 5000
+        // byoyomi 5000, no main time → panic mode, no soft limit
+        // byo_safe = 5000, base = 3250 - 0 = 3250, hard = min(4875, 5000) = 4875
         let cfg = parse_go("byoyomi 5000", Color::Black, 0, false);
         assert!(cfg.time_limit.is_some());
-        // no soft limit when panic mode is off and our_time=0
-        // panic = (0 < 5000 && 5000 > 0) = true → soft = None
         assert!(cfg.soft_limit.is_none(), "panic mode: no soft limit");
+        let hard = cfg.time_limit.unwrap().as_millis();
+        assert!(hard <= 5000, "hard={hard} must not exceed byoyomi");
     }
 
     #[test]
@@ -387,5 +394,29 @@ mod tests {
         let hard = cfg.time_limit.unwrap().as_millis();
         let soft = cfg.soft_limit.unwrap().as_millis();
         assert!(soft < hard, "soft={soft} hard={hard}");
+    }
+
+    #[test]
+    fn byoyomi_hard_within_overhead() {
+        // byoyomi 5000, overhead 300 → hard must be <= byo - overhead = 4700
+        let cfg = parse_go("byoyomi 5000", Color::Black, 300, false);
+        let hard = cfg.time_limit.unwrap().as_millis();
+        assert!(hard <= 4700, "hard={hard} exceeds byoyomi - overhead");
+    }
+
+    #[test]
+    fn pondering_no_limits() {
+        let cfg = parse_go("btime 60000 wtime 60000 ponder", Color::Black, 50, true);
+        assert!(cfg.time_limit.is_none());
+        assert!(cfg.soft_limit.is_none());
+    }
+
+    #[test]
+    fn movetime_overhead_deducted() {
+        // movetime 1000, overhead 50 → hard = 950
+        let cfg = parse_go("movetime 1000", Color::Black, 50, false);
+        let hard = cfg.time_limit.unwrap().as_millis();
+        assert!(hard <= 950, "hard={hard}");
+        assert!(cfg.soft_limit.is_none());
     }
 }

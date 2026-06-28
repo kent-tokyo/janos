@@ -333,6 +333,7 @@ impl Searcher {
         let mut best_move = None;
         let mut best_score = NEG_INF;
         let mut done_depth = 0;
+        let mut prev_best: Option<Move> = None;
 
         for depth in 1..=config.max_depth {
             let (m, score) = root_search(&state, board, depth, best_score);
@@ -348,6 +349,16 @@ impl Searcher {
             if score.abs() >= MATE_SCORE - 1000 {
                 break;
             }
+
+            if depth >= 2
+                && config
+                    .soft_limit
+                    .is_some_and(|soft| state.start.elapsed() >= soft)
+                && best_move == prev_best
+            {
+                break;
+            }
+            prev_best = best_move;
         }
 
         SearchInfo {
