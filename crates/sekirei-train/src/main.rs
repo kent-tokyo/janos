@@ -12,7 +12,9 @@
 
 mod csa;
 mod exporter;
+mod positions;
 mod scored;
+mod teacher_cache;
 mod trainer;
 
 use std::collections::HashMap;
@@ -24,13 +26,15 @@ use sekirei_core::nnue::save_weights;
 
 use csa::parse_csa;
 use exporter::export_game;
+use positions::load_positions;
 use scored::load_scored;
 use trainer::Trainer;
 
 // ---- CLI argument parsing ----
 
 struct Args {
-    games_dir: PathBuf,
+    games_dir: Option<PathBuf>,
+    positions_path: Option<PathBuf>, // --positions: shogiesa positions.jsonl
     output: PathBuf,
     epochs: usize,
     sample: usize,                // sample every N plies per game
@@ -45,11 +49,57 @@ struct Args {
     min_stability: f32,           // --min-stability (default: 0.85)
     stability_weighted: bool,     // --stability-weighted
     label_threshold_cp: i32,      // --label-threshold-cp (default: 120)
+    // positions mode extras
+    phase_weights: HashMap<String, f32>, // --phase-weights opening=0.5,middlegame=1.0,...
+    side_balance: bool,                  // --side-balance
+    source_cap: usize,                   // --source-cap N (0 = unlimited)
+    validation_ratio: f32,               // --validation-ratio (0.0 = no split)
+    seed: u64,                           // --seed (for validation split)
+    checkpoint_dir: Option<PathBuf>,     // --checkpoint-dir
+    teacher_cache_path: Option<PathBuf>, // --teacher-cache
+    reuse_teacher_cache: bool,           // --reuse-teacher-cache
+}
+
+fn parse_phase_weights(s: &str) -> HashMap<String, f32> {
+    s.split(',')
+        .filter_map(|pair| {
+            let (k, v) = pair.split_once('=')?;
+            let w: f32 = v.parse().ok()?;
+            Some((k.trim().to_string(), w))
+        })
+        .collect()
+}
+
+fn compute_side_weights(samples: &[positions::PositionSample]) -> HashMap<String, f32> {
+    let total = samples.len() as f32;
+    let black = samples.iter().filter(|s| s.side_to_move == "black").count() as f32;
+    let white = total - black;
+    [
+        (
+            "black".to_string(),
+            if black > 0.0 {
+                0.5 * total / black
+            } else {
+                1.0
+            },
+        ),
+        (
+            "white".to_string(),
+            if white > 0.0 {
+                0.5 * total / white
+            } else {
+                1.0
+            },
+        ),
+    ]
+    .into_iter()
+    .collect()
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut games_dir = None;
+    let mut positions_path: Option<PathBuf> = None;
     let mut output = PathBuf::from("weights.bin");
     let mut epochs = 3usize;
     let mut sample = 4usize;
@@ -64,6 +114,14 @@ fn parse_args() -> Result<Args, String> {
     let mut min_stability = 0.85f32;
     let mut stability_weighted = false;
     let mut label_threshold_cp = 120i32;
+    let mut phase_weights: HashMap<String, f32> = HashMap::new();
+    let mut side_balance = false;
+    let mut source_cap = 0usize;
+    let mut validation_ratio = 0.0f32;
+    let mut seed = 42u64;
+    let mut checkpoint_dir: Option<PathBuf> = None;
+    let mut teacher_cache_path: Option<PathBuf> = None;
+    let mut reuse_teacher_cache = false;
     let mut i = 0;
 
     while i < argv.len() {
@@ -71,6 +129,10 @@ fn parse_args() -> Result<Args, String> {
             "--games" => {
                 i += 1;
                 games_dir = argv.get(i).map(PathBuf::from);
+            }
+            "--positions" => {
+                i += 1;
+                positions_path = argv.get(i).map(PathBuf::from);
             }
             "--output" => {
                 i += 1;
@@ -146,6 +208,44 @@ fn parse_args() -> Result<Args, String> {
                     label_threshold_cp = s.parse().unwrap_or(120);
                 }
             }
+            "--phase-weights" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    phase_weights = parse_phase_weights(s);
+                }
+            }
+            "--side-balance" => {
+                side_balance = true;
+            }
+            "--source-cap" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    source_cap = s.parse().unwrap_or(0);
+                }
+            }
+            "--validation-ratio" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    validation_ratio = s.parse().unwrap_or(0.0);
+                }
+            }
+            "--seed" => {
+                i += 1;
+                if let Some(s) = argv.get(i) {
+                    seed = s.parse().unwrap_or(42);
+                }
+            }
+            "--checkpoint-dir" => {
+                i += 1;
+                checkpoint_dir = argv.get(i).map(PathBuf::from);
+            }
+            "--teacher-cache" => {
+                i += 1;
+                teacher_cache_path = argv.get(i).map(PathBuf::from);
+            }
+            "--reuse-teacher-cache" => {
+                reuse_teacher_cache = true;
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -155,8 +255,16 @@ fn parse_args() -> Result<Args, String> {
         i += 1;
     }
 
+    if games_dir.is_none() && positions_path.is_none() {
+        return Err("either --games <dir> or --positions <jsonl> is required".to_string());
+    }
+    if games_dir.is_some() && positions_path.is_some() {
+        return Err("--games and --positions are mutually exclusive".to_string());
+    }
+
     Ok(Args {
-        games_dir: games_dir.ok_or("--games <dir> is required")?,
+        games_dir,
+        positions_path,
         output,
         epochs,
         sample,
@@ -171,13 +279,47 @@ fn parse_args() -> Result<Args, String> {
         min_stability,
         stability_weighted,
         label_threshold_cp,
+        phase_weights,
+        side_balance,
+        source_cap,
+        validation_ratio,
+        seed,
+        checkpoint_dir,
+        teacher_cache_path,
+        reuse_teacher_cache,
     })
 }
 
+fn save_checkpoint_meta(
+    path: &Path,
+    args: &Args,
+    epoch: usize,
+    train_count: u64,
+    valid_count: u64,
+) -> std::io::Result<()> {
+    let meta = serde_json::json!({
+        "epoch": epoch,
+        "positions": args.positions_path,
+        "scored": args.scored_path,
+        "label_depth": args.label_depth,
+        "phase_weights": args.phase_weights,
+        "side_balance": args.side_balance,
+        "source_cap": args.source_cap,
+        "validation_ratio": args.validation_ratio,
+        "seed": args.seed,
+        "train_count": train_count,
+        "valid_count": valid_count,
+    });
+    fs::write(path, serde_json::to_string_pretty(&meta).unwrap())
+}
+
 fn print_usage() {
-    eprintln!("Usage: train --games <dir> [--output weights.bin] [--epochs 3] [--sample 4]");
+    eprintln!(
+        "Usage: train (--games <dir> | --positions <jsonl>) [--output weights.bin] [--epochs 3] [--sample 4]"
+    );
     eprintln!();
     eprintln!("  --games <dir>       Directory containing .csa game files");
+    eprintln!("  --positions <jsonl> shogiesa positions.jsonl (alternative to --games)");
     eprintln!("  --output <file>     Output weight file (default: weights.bin)");
     eprintln!("  --epochs <n>        Training epochs (default: 3)");
     eprintln!("  --sample <n>        Sample every N plies per game (default: 4)");
@@ -196,6 +338,16 @@ fn print_usage() {
     eprintln!(
         "  --label-threshold-cp <n>  Score threshold for adv/equal/disadv label (default: 120)"
     );
+    eprintln!(
+        "  --phase-weights <spec>  Phase multipliers: opening=0.5,middlegame=1.0,endgame=1.2"
+    );
+    eprintln!("  --side-balance          Equalise black/white sample weights");
+    eprintln!("  --source-cap <n>        Max samples per source file (0 = unlimited)");
+    eprintln!("  --validation-ratio <f>  Hold-out fraction for valid_loss (default: 0.0 = off)");
+    eprintln!("  --seed <n>              Seed for validation split (default: 42)");
+    eprintln!("  --checkpoint-dir <dir>  Directory for epoch checkpoints");
+    eprintln!("  --teacher-cache <path>  JSONL cache of teacher scores (sfen → score_cp)");
+    eprintln!("  --reuse-teacher-cache   Load teacher cache; skip search on cache hits");
     eprintln!();
     eprintln!("Data: download floodgate archives from http://wdoor.c.u-tokyo.ac.jp/shogi/");
 }
@@ -234,7 +386,208 @@ fn main() {
         }
     };
 
-    let files = collect_csa_files(&args.games_dir);
+    // ---- positions mode (shogiesa JSONL) ----
+    if let Some(pos_path) = &args.positions_path {
+        eprintln!("Positions mode: loading {:?}", pos_path);
+        let raw_samples = load_positions(pos_path);
+        if raw_samples.is_empty() {
+            eprintln!("No valid positions loaded");
+            std::process::exit(1);
+        }
+        let all_samples = if args.source_cap > 0 {
+            let n_before = raw_samples.len();
+            let s = positions::apply_source_cap(raw_samples, args.source_cap, args.seed);
+            eprintln!(
+                "{} positions loaded, {} after source_cap={} (seed={})",
+                n_before,
+                s.len(),
+                args.source_cap,
+                args.seed
+            );
+            s
+        } else {
+            eprintln!("{} positions loaded", raw_samples.len());
+            raw_samples
+        };
+
+        // Deterministic validation split via SFEN hash
+        let split_threshold = (args.validation_ratio.clamp(0.0, 1.0) * 1000.0) as u64;
+        let (train_samples, valid_samples): (Vec<_>, Vec<_>) =
+            all_samples.into_iter().partition(|s| {
+                let sfen = sekirei_core::sfen::board_to_sfen(&s.board);
+                positions::sfen_hash(&sfen, args.seed) % 1000 >= split_threshold
+            });
+        eprintln!(
+            "  train={} valid={} (validation_ratio={:.2}, seed={})",
+            train_samples.len(),
+            valid_samples.len(),
+            args.validation_ratio,
+            args.seed
+        );
+
+        let scored: HashMap<String, f32> = match &args.scored_path {
+            Some(p) => load_scored(p, args.min_stability),
+            None => HashMap::new(),
+        };
+
+        let side_weights = if args.side_balance {
+            compute_side_weights(&train_samples)
+        } else {
+            HashMap::new()
+        };
+        if args.side_balance {
+            eprintln!(
+                "  side_balance: black={:.3} white={:.3}",
+                side_weights.get("black").copied().unwrap_or(1.0),
+                side_weights.get("white").copied().unwrap_or(1.0)
+            );
+        }
+
+        let checkpoint_dir = args
+            .checkpoint_dir
+            .clone()
+            .unwrap_or_else(|| args.output.parent().unwrap_or(Path::new(".")).to_path_buf());
+        let output_stem = args
+            .output
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("weights")
+            .to_string();
+
+        // Load teacher cache if requested
+        let mut combined_cache: HashMap<String, i32> = if args.reuse_teacher_cache {
+            match &args.teacher_cache_path {
+                Some(p) => teacher_cache::load(p),
+                None => {
+                    eprintln!("error: --reuse-teacher-cache requires --teacher-cache <path>");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            HashMap::new()
+        };
+
+        let mut trainer = Trainer::new();
+
+        for epoch in 1..=args.epochs {
+            trainer.lr = 0.001_f32 * 0.5_f32.powi((epoch - 1) as i32);
+            trainer.reset_epoch_stats();
+            eprintln!("Epoch {epoch}/{} — lr = {:.6}", args.epochs, trainer.lr);
+
+            let mut new_entries: Vec<(String, i32)> = Vec::new();
+            trainer.train_positions(
+                &train_samples,
+                args.label_depth,
+                &scored,
+                args.stability_weighted,
+                &args.phase_weights,
+                &side_weights,
+                &combined_cache,
+                &mut new_entries,
+            );
+
+            // After epoch 1: merge new entries into cache so later epochs skip search
+            if epoch == 1 && !new_entries.is_empty() {
+                let n = new_entries.len();
+                for (sfen, cp) in new_entries {
+                    combined_cache.entry(sfen).or_insert(cp);
+                }
+                eprintln!("  teacher cache: {n} new entries computed");
+                if let Some(cache_path) = &args.teacher_cache_path {
+                    match teacher_cache::write(cache_path, &combined_cache, args.label_depth) {
+                        Ok(_) => eprintln!("  teacher cache written → {:?}", cache_path),
+                        Err(e) => eprintln!("  teacher cache write failed: {e}"),
+                    }
+                }
+            } else if epoch == 1 {
+                eprintln!(
+                    "  teacher cache: all {} entries from cache (no search)",
+                    combined_cache.len()
+                );
+            }
+
+            if !scored.is_empty() {
+                let total_seen = trainer.total_count + trainer.dropped_missing;
+                let missing_rate = if total_seen > 0 {
+                    trainer.dropped_missing as f64 / total_seen as f64
+                } else {
+                    0.0
+                };
+                let avg_weight = if trainer.total_count > 0 {
+                    trainer.total_weight / trainer.total_count as f64
+                } else {
+                    1.0
+                };
+                eprintln!(
+                    "  quietset: entries={} matched={} dropped_missing={} missing_rate={:.1}% avg_weight={:.3}",
+                    scored.len(),
+                    trainer.total_count,
+                    trainer.dropped_missing,
+                    missing_rate * 100.0,
+                    avg_weight,
+                );
+                if missing_rate > 0.5 {
+                    eprintln!(
+                        "  warn: missing_rate={:.1}% — SFEN mismatch?",
+                        missing_rate * 100.0
+                    );
+                }
+            }
+            let avg_final_weight = if trainer.total_count > 0 {
+                trainer.total_weight / trainer.total_count as f64
+            } else {
+                1.0
+            };
+            eprintln!(
+                "  train: avg_loss={:.4}  samples={}  avg_final_weight={:.3}",
+                trainer.avg_loss(),
+                trainer.total_count,
+                avg_final_weight,
+            );
+
+            let valid_count = valid_samples.len() as u64;
+            if !valid_samples.is_empty() {
+                let (vloss_raw, vloss_w, vcount) = trainer.eval_positions(
+                    &valid_samples,
+                    args.label_depth,
+                    &args.phase_weights,
+                    &side_weights,
+                );
+                eprintln!(
+                    "  valid: loss_raw={:.4}  loss_weighted={:.4}  samples={}",
+                    vloss_raw, vloss_w, vcount,
+                );
+            }
+
+            let checkpoint = checkpoint_dir.join(format!("{output_stem}.epoch{epoch}.bin"));
+            let w = trainer.weights.to_nnue_weights();
+            match sekirei_core::nnue::save_weights(&w, &checkpoint) {
+                Ok(_) => eprintln!("  checkpoint → {:?}", checkpoint),
+                Err(e) => eprintln!("  checkpoint save failed: {e}"),
+            }
+            let meta_path = checkpoint.with_extension("meta.json");
+            if let Err(e) =
+                save_checkpoint_meta(&meta_path, &args, epoch, trainer.total_count, valid_count)
+            {
+                eprintln!("  metadata save failed: {e}");
+            } else {
+                eprintln!("  metadata  → {:?}", meta_path);
+            }
+        }
+
+        let w = trainer.weights.to_nnue_weights();
+        match sekirei_core::nnue::save_weights(&w, &args.output) {
+            Ok(_) => eprintln!("Final weights saved → {:?}", args.output),
+            Err(e) => {
+                eprintln!("Save failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // ---- CSA games mode ----
+    let files = collect_csa_files(args.games_dir.as_ref().unwrap());
     if files.is_empty() {
         eprintln!("No .csa files found in {:?}", args.games_dir);
         std::process::exit(1);

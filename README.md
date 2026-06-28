@@ -115,7 +115,18 @@ cargo run --release -p sekirei-match-runner -- \
 cargo run --release -p sekirei-train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
-## NNUE Training with Quietset
+## NNUE Training
+
+### From CSA files (standalone)
+
+```bash
+# Basic: train from floodgate CSA files (download from http://wdoor.c.u-tokyo.ac.jp/shogi/)
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights.bin \
+  --epochs 3 --quiet --min-ply 20 --min-rate 1800 --label-depth 4
+```
+
+### With Quietset (stability-filtered)
 
 [quietset](https://github.com/kent-tokyo/quietset) filters training positions by label stability across multiple search depths, reducing noisy teacher labels.
 
@@ -130,27 +141,47 @@ quietset score observations.jsonl > scored.jsonl
 
 # 3a. Train with stable samples only (keep where stability >= 0.85)
 cargo run --release -p sekirei-train -- \
-  --games /path/to/csa_dir --output weights_quietset.bin \
-  --scored scored.jsonl --min-stability 0.85
+  --games /path/to/csa_dir --output weights_keep.bin \
+  --scored scored.jsonl --min-stability 0.85 --epochs 3
 
-# 3b. Or weight loss by stability_score (review positions contribute less)
+# 3b. Or weight loss by stability_score (unstable positions contribute less)
 cargo run --release -p sekirei-train -- \
   --games /path/to/csa_dir --output weights_weighted.bin \
-  --scored scored.jsonl --stability-weighted
+  --scored scored.jsonl --stability-weighted --epochs 3
+```
 
-# 4. Baseline vs filtered vs weighted (200+ games each)
+### With shogiesa (external data pipeline)
+
+[shogiesa](https://github.com/kent-tokyo/shogiesa) is a dedicated data-forge tool for extracting, filtering, and labeling shogi positions. When using shogiesa, sekirei-train accepts its `positions.jsonl` directly via `--positions`, bypassing the CSA parser entirely.
+
+```bash
+# 1. Extract positions with shogiesa
+shogiesa extract \
+  --input ./csa --out positions.jsonl \
+  --min-ply 20 --every-n-plies 4 --dedup
+
+# 2. Label positions using sekirei as the USI engine
+shogiesa label \
+  --input positions.jsonl --engine ./target/release/sekirei \
+  --depths 4,6,8 --out observations.jsonl
+
+# 3. Score label stability
+quietset score observations.jsonl > scored.jsonl
+
+# 4. Train directly from shogiesa positions
 cargo run --release -p sekirei-train -- \
-  --games /path/to/csa_dir --output weights_baseline.bin --epochs 3
+  --positions positions.jsonl \
+  --scored scored.jsonl --stability-weighted \
+  --label-depth 4 --output weights_shogiesa.bin
+```
 
-cargo run --release -p sekirei-match-runner -- \
-  --engine1 "./target/release/sekirei weights_quietset.bin" \
-  --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 200 --byoyomi 1000 --json keep_vs_baseline.json
+### Comparing variants
 
+```bash
 cargo run --release -p sekirei-match-runner -- \
   --engine1 "./target/release/sekirei weights_weighted.bin" \
   --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 200 --byoyomi 1000 --json weighted_vs_baseline.json
+  --games 400 --byoyomi 1000 --json result.json
 ```
 
 ## Benchmarks

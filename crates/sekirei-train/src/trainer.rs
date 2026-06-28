@@ -151,6 +151,111 @@ impl Trainer {
         }
     }
 
+    /// Train on a slice of PositionSamples (from shogiesa positions.jsonl).
+    /// `teacher_cache`: sfen → score_cp; cache hits skip search entirely.
+    /// `new_entries`: receives (sfen, score_cp) for each search actually run (cache miss).
+    #[allow(clippy::too_many_arguments)]
+    pub fn train_positions(
+        &mut self,
+        samples: &[crate::positions::PositionSample],
+        label_depth: u32,
+        scored: &HashMap<String, f32>,
+        stability_weighted: bool,
+        phase_weights: &HashMap<String, f32>,
+        side_weights: &HashMap<String, f32>,
+        teacher_cache: &HashMap<String, i32>,
+        new_entries: &mut Vec<(String, i32)>,
+    ) {
+        for sample in samples {
+            let sfen = sekirei_core::sfen::board_to_sfen(&sample.board);
+            let stability = if scored.is_empty() {
+                1.0f32
+            } else {
+                match scored.get(&sfen) {
+                    Some(&s) => {
+                        if stability_weighted {
+                            s
+                        } else {
+                            1.0
+                        }
+                    }
+                    None => {
+                        self.dropped_missing += 1;
+                        continue;
+                    }
+                }
+            };
+            let phase_w = phase_weights.get(&sample.phase).copied().unwrap_or(1.0);
+            let side_w = side_weights
+                .get(&sample.side_to_move)
+                .copied()
+                .unwrap_or(1.0);
+            let weight = stability * phase_w * side_w;
+
+            let score_cp = if let Some(&cp) = teacher_cache.get(&sfen) {
+                cp
+            } else {
+                let config = SearchConfig {
+                    max_depth: label_depth,
+                    time_limit: None,
+                };
+                let mut b = sample.board.clone();
+                let cp = self.searcher.search(&mut b, config).score;
+                new_entries.push((sfen, cp));
+                cp
+            };
+            let teacher = (score_cp as f32).clamp(-600.0, 600.0);
+            self.train_position(&sample.board, teacher, weight);
+        }
+    }
+
+    /// Forward-only pass for validation loss (no weight updates).
+    /// Returns `(loss_raw, loss_weighted, count)`.
+    /// `loss_raw` = plain MSE; `loss_weighted` = MSE weighted by phase/side multipliers.
+    pub fn eval_positions(
+        &mut self,
+        samples: &[crate::positions::PositionSample],
+        label_depth: u32,
+        phase_weights: &HashMap<String, f32>,
+        side_weights: &HashMap<String, f32>,
+    ) -> (f64, f64, u64) {
+        let mut loss_raw = 0.0f64;
+        let mut loss_weighted = 0.0f64;
+        let mut total_w = 0.0f64;
+        let mut count = 0u64;
+        for sample in samples {
+            let config = SearchConfig {
+                max_depth: label_depth,
+                time_limit: None,
+            };
+            let mut b = sample.board.clone();
+            let info = self.searcher.search(&mut b, config);
+            let teacher = (info.score as f32).clamp(-600.0, 600.0);
+            let score = self.forward(&sample.board);
+            let err2 = ((score - teacher) * (score - teacher)) as f64;
+            loss_raw += err2;
+            let w = phase_weights.get(&sample.phase).copied().unwrap_or(1.0)
+                * side_weights
+                    .get(&sample.side_to_move)
+                    .copied()
+                    .unwrap_or(1.0);
+            loss_weighted += w as f64 * err2;
+            total_w += w as f64;
+            count += 1;
+        }
+        let raw = if count > 0 {
+            loss_raw / count as f64
+        } else {
+            0.0
+        };
+        let weighted = if total_w > 0.0 {
+            loss_weighted / total_w
+        } else {
+            0.0
+        };
+        (raw, weighted, count)
+    }
+
     /// Train on a single game.  Samples every `sample_every` plies.
     #[allow(clippy::too_many_arguments)]
     pub fn train_game(
@@ -215,6 +320,43 @@ impl Trainer {
 
             board.do_move(mv);
         }
+    }
+
+    /// Forward pass only — returns score without any weight update.
+    fn forward(&self, board: &Board) -> f32 {
+        let stm = board.side_to_move;
+        let w = &self.weights;
+        let mut acc_us = w.ft_bias.clone();
+        let mut acc_them = acc_us.clone();
+        for feat in &active_features(board, stm) {
+            let base = feat * L1;
+            for j in 0..L1 {
+                acc_us[j] += w.ft[base + j];
+            }
+        }
+        for feat in &active_features(board, stm.flip()) {
+            let base = feat * L1;
+            for j in 0..L1 {
+                acc_them[j] += w.ft[base + j];
+            }
+        }
+        let relu_us: Vec<f32> = acc_us.iter().map(|&x| x.clamp(0.0, 127.0)).collect();
+        let relu_them: Vec<f32> = acc_them.iter().map(|&x| x.clamp(0.0, 127.0)).collect();
+        let mut l2_acc = w.l2_bias.clone();
+        for j in 0..L1 {
+            let base_us = j * L2;
+            let base_them = (L1 + j) * L2;
+            for o in 0..L2 {
+                l2_acc[o] += relu_us[j] * w.l2[base_us + o];
+                l2_acc[o] += relu_them[j] * w.l2[base_them + o];
+            }
+        }
+        let relu_l2: Vec<f32> = l2_acc.iter().map(|&x| x.clamp(0.0, 127.0)).collect();
+        let mut output = w.out_bias;
+        for o in 0..L2 {
+            output += relu_l2[o] * w.out[o];
+        }
+        output / 64.0
     }
 
     /// One SGD step on a single position. `weight` scales the loss (quietset stability).

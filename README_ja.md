@@ -113,9 +113,20 @@ cargo run --release -p sekirei-match-runner -- \
 cargo run --release -p sekirei-train -- --games /path/to/csa_dir --output weights.bin --epochs 3
 ```
 
-## Quietset を使った NNUE 訓練
+## NNUE 訓練
 
-[quietset](https://github.com/kent-tokyo/quietset) は、複数の探索深度でのラベル安定性を評価し、ノイズの多い教師ラベルを除外します。
+### CSA ファイルから（スタンドアロン）
+
+```bash
+# 基本: floodgate CSA から訓練（http://wdoor.c.u-tokyo.ac.jp/shogi/ からダウンロード）
+cargo run --release -p sekirei-train -- \
+  --games /path/to/csa_dir --output weights.bin \
+  --epochs 3 --quiet --min-ply 20 --min-rate 1800 --label-depth 4
+```
+
+### Quietset を使った安定性フィルタリング
+
+[quietset](https://github.com/kent-tokyo/quietset) は複数の探索深度でのラベル安定性を評価し、ノイズの多い教師ラベルを除外します。
 
 ```bash
 # 1. 複数深度で観測データを出力
@@ -128,27 +139,47 @@ quietset score observations.jsonl > scored.jsonl
 
 # 3a. 安定局面のみで学習（stability >= 0.85）
 cargo run --release -p sekirei-train -- \
-  --games /path/to/csa_dir --output weights_quietset.bin \
-  --scored scored.jsonl --min-stability 0.85
+  --games /path/to/csa_dir --output weights_keep.bin \
+  --scored scored.jsonl --min-stability 0.85 --epochs 3
 
-# 3b. または stability_score でロスを重み付け
+# 3b. または stability_score でロスを重み付け（不安定局面の寄与を小さくする）
 cargo run --release -p sekirei-train -- \
   --games /path/to/csa_dir --output weights_weighted.bin \
-  --scored scored.jsonl --stability-weighted
+  --scored scored.jsonl --stability-weighted --epochs 3
+```
 
-# 4. baseline / keep-only / weighted の比較（各 200 局以上推奨）
+### shogiesa を使った外部データパイプライン
+
+[shogiesa](https://github.com/kent-tokyo/shogiesa) は将棋局面の抽出・フィルタ・ラベリングに特化したデータ鍛造ツールです。shogiesa を使う場合、sekirei-train は `--positions` で positions.jsonl を直接受け取れます（CSA パース不要）。
+
+```bash
+# 1. shogiesa で局面を抽出
+shogiesa extract \
+  --input ./csa --out positions.jsonl \
+  --min-ply 20 --every-n-plies 4 --dedup
+
+# 2. sekirei を USI エンジンとして使い局面にラベルを付与
+shogiesa label \
+  --input positions.jsonl --engine ./target/release/sekirei \
+  --depths 4,6,8 --out observations.jsonl
+
+# 3. 安定度スコアリング
+quietset score observations.jsonl > scored.jsonl
+
+# 4. shogiesa 局面を直接入力として訓練
 cargo run --release -p sekirei-train -- \
-  --games /path/to/csa_dir --output weights_baseline.bin --epochs 3
+  --positions positions.jsonl \
+  --scored scored.jsonl --stability-weighted \
+  --label-depth 4 --output weights_shogiesa.bin
+```
 
-cargo run --release -p sekirei-match-runner -- \
-  --engine1 "./target/release/sekirei weights_quietset.bin" \
-  --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 200 --byoyomi 1000 --json keep_vs_baseline.json
+### バリアント比較
 
+```bash
 cargo run --release -p sekirei-match-runner -- \
   --engine1 "./target/release/sekirei weights_weighted.bin" \
   --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 200 --byoyomi 1000 --json weighted_vs_baseline.json
+  --games 400 --byoyomi 1000 --json result.json
 ```
 
 ## ベンチマーク
