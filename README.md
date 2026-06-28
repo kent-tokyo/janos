@@ -150,38 +150,51 @@ cargo run --release -p sekirei-train -- \
   --scored scored.jsonl --stability-weighted --epochs 3
 ```
 
-### With shogiesa (external data pipeline)
+### With shogiesa + quietset (official pipeline)
 
-[shogiesa](https://github.com/kent-tokyo/shogiesa) is a dedicated data-forge tool for extracting, filtering, and labeling shogi positions. When using shogiesa, sekirei-train accepts its `positions.jsonl` directly via `--positions`, bypassing the CSA parser entirely.
+[shogiesa](https://github.com/kent-tokyo/shogiesa) extracts and labels positions;
+[quietset](https://github.com/kent-tokyo/quietset) scores label stability.
+sekirei-train accepts `positions.jsonl` directly via `--positions`, bypassing CSA parsing entirely.
+
+The one-shot pipeline script handles all stages and runs an Elo gate at the end:
 
 ```bash
-# 1. Extract positions with shogiesa
-shogiesa extract \
-  --input ./csa --out positions.jsonl \
-  --min-ply 20 --every-n-plies 4 --dedup
+# Tier 1 — Quick (depths 2,4, ~hours)
+bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
-# 2. Label positions using sekirei as the USI engine
-shogiesa label \
-  --input positions.jsonl --engine ./target/release/sekirei \
-  --depths 4,6,8 --out observations.jsonl
+# Tier 2 — Standard (depths 2,4,6)
+DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
-# 3. Score label stability
-quietset score observations.jsonl > scored.jsonl
-
-# 4. Train directly from shogiesa positions
-cargo run --release -p sekirei-train -- \
-  --positions positions.jsonl \
-  --scored scored.jsonl --stability-weighted \
-  --label-depth 4 --output weights_shogiesa.bin
+# Tier 3 — Deep: re-label borderline positions at depth 4,6,8 then retrain
+quietset select data/stage3/scored.jsonl --class borderline \
+  | shogiesa label --engine ./target/release/sekirei --depths 4,6,8 \
+  | quietset score --profile game-ai >> data/stage3/scored.jsonl
+DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
 ```
 
-### Comparing variants
+The script saves intermediate files in `data/stage1/`, `data/stage2/`, `data/stage3/` and match
+results in `results/`. To run stages manually:
 
 ```bash
-cargo run --release -p sekirei-match-runner -- \
-  --engine1 "./target/release/sekirei weights_weighted.bin" \
-  --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 400 --byoyomi 1000 --json result.json
+# Stage 1: extract
+shogiesa extract --input ./data/csa --out data/stage1/positions.jsonl \
+  --min-ply 20 --max-ply 160 --every-n-plies 4 --dedup
+
+# Stage 2: label
+shogiesa label --input data/stage1/positions.jsonl \
+  --engine ./target/release/sekirei --depths 2,4 --timeout-ms 10000 \
+  --out data/stage2/observations.jsonl
+
+# Stage 3: score
+quietset score data/stage2/observations.jsonl --profile game-ai > data/stage3/scored.jsonl
+
+# Train
+cargo run --release -p sekirei-train -- \
+  --positions data/stage1/positions.jsonl \
+  --scored data/stage3/scored.jsonl \
+  --stability-weighted --validation-ratio 0.1 \
+  --checkpoint-dir data/checkpoints \
+  --output data/weights_new.bin
 ```
 
 ## Strength Regression

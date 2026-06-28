@@ -148,38 +148,50 @@ cargo run --release -p sekirei-train -- \
   --scored scored.jsonl --stability-weighted --epochs 3
 ```
 
-### shogiesa を使った外部データパイプライン
+### shogiesa + quietset 公式パイプライン
 
-[shogiesa](https://github.com/kent-tokyo/shogiesa) は将棋局面の抽出・フィルタ・ラベリングに特化したデータ鍛造ツールです。shogiesa を使う場合、sekirei-train は `--positions` で positions.jsonl を直接受け取れます（CSA パース不要）。
+[shogiesa](https://github.com/kent-tokyo/shogiesa) が局面の抽出・ラベリングを担当し、
+[quietset](https://github.com/kent-tokyo/quietset) が安定性スコアリングを担当します。
+sekirei-train は `--positions` で positions.jsonl を直接受け取ります（CSA パース不要）。
+
+ワンショットのパイプラインスクリプトで全ステージを実行し、最後に Elo gate を通します：
 
 ```bash
-# 1. shogiesa で局面を抽出
-shogiesa extract \
-  --input ./csa --out positions.jsonl \
-  --min-ply 20 --every-n-plies 4 --dedup
+# Tier 1 — クイック（depths 2,4、数時間）
+bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
-# 2. sekirei を USI エンジンとして使い局面にラベルを付与
-shogiesa label \
-  --input positions.jsonl --engine ./target/release/sekirei \
-  --depths 4,6,8 --out observations.jsonl
+# Tier 2 — 標準（depths 2,4,6）
+DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_new.bin data/weights_v7.bin
 
-# 3. 安定度スコアリング
-quietset score observations.jsonl > scored.jsonl
-
-# 4. shogiesa 局面を直接入力として訓練
-cargo run --release -p sekirei-train -- \
-  --positions positions.jsonl \
-  --scored scored.jsonl --stability-weighted \
-  --label-depth 4 --output weights_shogiesa.bin
+# Tier 3 — ディープ: 境界局面のみ depth 4,6,8 で再ラベルして再訓練
+quietset select data/stage3/scored.jsonl --class borderline \
+  | shogiesa label --engine ./target/release/sekirei --depths 4,6,8 \
+  | quietset score --profile game-ai >> data/stage3/scored.jsonl
+DEPTHS=2,4,6 bash scripts/train_with_shogiesa_quietset.sh data/csa weights_deep.bin data/weights_v7.bin
 ```
 
-### バリアント比較
+中間ファイルは `data/stage1/`、`data/stage2/`、`data/stage3/` に保存されます。手動で各ステージを実行する場合：
 
 ```bash
-cargo run --release -p sekirei-match-runner -- \
-  --engine1 "./target/release/sekirei weights_weighted.bin" \
-  --engine2 "./target/release/sekirei weights_baseline.bin" \
-  --games 400 --byoyomi 1000 --json result.json
+# Stage 1: 局面抽出
+shogiesa extract --input ./data/csa --out data/stage1/positions.jsonl \
+  --min-ply 20 --max-ply 160 --every-n-plies 4 --dedup
+
+# Stage 2: ラベル付け
+shogiesa label --input data/stage1/positions.jsonl \
+  --engine ./target/release/sekirei --depths 2,4 --timeout-ms 10000 \
+  --out data/stage2/observations.jsonl
+
+# Stage 3: 安定性スコアリング
+quietset score data/stage2/observations.jsonl --profile game-ai > data/stage3/scored.jsonl
+
+# 訓練
+cargo run --release -p sekirei-train -- \
+  --positions data/stage1/positions.jsonl \
+  --scored data/stage3/scored.jsonl \
+  --stability-weighted --validation-ratio 0.1 \
+  --checkpoint-dir data/checkpoints \
+  --output data/weights_new.bin
 ```
 
 ## 棋力回帰テスト
