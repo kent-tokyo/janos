@@ -1,3 +1,6 @@
 #!/bin/sh
+# set -e: without it the hook's exit code is just clippy's, so a fmt failure
+# was silently ignored and unformatted code reached CI. Block on either.
+set -e
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings

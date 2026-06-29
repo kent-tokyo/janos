@@ -390,7 +390,10 @@ fn root_search(
     let moves: Vec<Move> = if excluded.is_empty() {
         all_moves
     } else {
-        all_moves.into_iter().filter(|m| !excluded.contains(m)).collect()
+        all_moves
+            .into_iter()
+            .filter(|m| !excluded.contains(m))
+            .collect()
     };
     if moves.is_empty() {
         return (None, -MATE_SCORE);
@@ -419,8 +422,8 @@ fn root_search(
     // Mate-in-1: check each root move for immediate checkmate before deep search
     for &m in &ordered {
         let tok = board.do_move(m);
-        let mated = generate_legal_moves(board).is_empty()
-            && is_in_check(board, board.side_to_move);
+        let mated =
+            generate_legal_moves(board).is_empty() && is_in_check(board, board.side_to_move);
         board.undo_move(tok);
         if mated {
             return (Some(m), MATE_SCORE - 1);
@@ -438,8 +441,7 @@ fn root_search(
             let mut opp_can_mate = false;
             'opp: for opp_m in generate_legal_moves(board) {
                 let tok2 = board.do_move(opp_m);
-                if generate_legal_moves(board).is_empty()
-                    && is_in_check(board, board.side_to_move)
+                if generate_legal_moves(board).is_empty() && is_in_check(board, board.side_to_move)
                 {
                     opp_can_mate = true;
                 }
@@ -1300,7 +1302,10 @@ impl SpeculativeSearcher {
                     break;
                 }
                 match m {
-                    Some(mv) => { depth_pv.push((mv, score)); excluded.push(mv); }
+                    Some(mv) => {
+                        depth_pv.push((mv, score));
+                        excluded.push(mv);
+                    }
                     None => break,
                 }
             }
@@ -1480,7 +1485,9 @@ fn see_score(board: &mut Board, m: Move) -> i32 {
     if m.from.is_none() {
         return 0;
     }
-    let Some(cap) = board.piece_at(m.to) else { return 0 };
+    let Some(cap) = board.piece_at(m.to) else {
+        return 0;
+    };
 
     let victim_val = PIECE_VALUE[cap.kind.index()];
     let base_attacker_val = PIECE_VALUE[m.piece_kind.index()];

@@ -161,7 +161,13 @@ fn main() {
                 }
                 // Reset suppress flag now that the previous thread has joined.
                 suppress_bm.store(false, Ordering::Relaxed);
-                let config = parse_go(rest, board.side_to_move, move_overhead_ms, pondering, multi_pv);
+                let config = parse_go(
+                    rest,
+                    board.side_to_move,
+                    move_overhead_ms,
+                    pondering,
+                    multi_pv,
+                );
                 let abort = searcher.abort_flag();
                 search_abort = Some(abort);
 
@@ -182,15 +188,26 @@ fn main() {
                         for (i, &(mv, score)) in info.pv_list.iter().enumerate() {
                             println!(
                                 "info multipv {} depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                                i + 1, info.depth, score, info.nodes, nps, elapsed_ms,
-                                info.hashfull, move_to_usi(mv)
+                                i + 1,
+                                info.depth,
+                                score,
+                                info.nodes,
+                                nps,
+                                elapsed_ms,
+                                info.hashfull,
+                                move_to_usi(mv)
                             );
                         }
                     } else if let Some(m) = info.best_move {
                         println!(
                             "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                            info.depth, info.score, info.nodes, nps, elapsed_ms,
-                            info.hashfull, move_to_usi(m)
+                            info.depth,
+                            info.score,
+                            info.nodes,
+                            nps,
+                            elapsed_ms,
+                            info.hashfull,
+                            move_to_usi(m)
                         );
                     }
 
@@ -238,7 +255,8 @@ fn main() {
                 // Reset suppress before launching the real timed search.
                 suppress_bm.store(false, Ordering::Relaxed);
                 if let Some(ref args) = ponder_go_args.take() {
-                    let config = parse_go(args, board.side_to_move, move_overhead_ms, false, multi_pv);
+                    let config =
+                        parse_go(args, board.side_to_move, move_overhead_ms, false, multi_pv);
                     let abort = searcher.abort_flag();
                     search_abort = Some(abort);
                     let searcher2 = Arc::clone(&searcher);
@@ -254,8 +272,13 @@ fn main() {
                         if let Some(m) = info.best_move {
                             println!(
                                 "info depth {} score cp {} nodes {} nps {} time {} hashfull {} pv {}",
-                                info.depth, info.score, info.nodes, nps, elapsed_ms,
-                                info.hashfull, move_to_usi(m)
+                                info.depth,
+                                info.score,
+                                info.nodes,
+                                nps,
+                                elapsed_ms,
+                                info.hashfull,
+                                move_to_usi(m)
                             );
                         }
                         let best = info
@@ -305,7 +328,13 @@ fn make_searcher(hash_mb: usize) -> Arc<SpeculativeSearcher> {
 
 // ---- Go command time-control parsing ----
 
-fn parse_go(args: &str, side: Color, overhead_ms: u64, pondering: bool, multi_pv: u32) -> SearchConfig {
+fn parse_go(
+    args: &str,
+    side: Color,
+    overhead_ms: u64,
+    pondering: bool,
+    multi_pv: u32,
+) -> SearchConfig {
     let mut btime: Option<u64> = None;
     let mut wtime: Option<u64> = None;
     let mut byoyomi: Option<u64> = None;
