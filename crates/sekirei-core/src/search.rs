@@ -396,9 +396,12 @@ fn root_search(
         return (None, -MATE_SCORE);
     }
 
-    // Single legal move: return immediately without searching
+    // Single legal move: skip deep search but return an honest eval score.
     if moves.len() == 1 {
-        return (Some(moves[0]), 0);
+        let tok = board.do_move(moves[0]);
+        let score = -evaluate(board);
+        board.undo_move(tok);
+        return (Some(moves[0]), score);
     }
 
     let tt_mv = state.tt.probe(board.hash()).and_then(|e| e.mv);
@@ -851,12 +854,18 @@ fn alpha_beta(
     }
 
     // ---------- Young brothers ----------
-    if depth >= MIN_SPLIT_DEPTH {
+    // Returns the index in `rest` where sequential processing should begin:
+    // ybw_end after the parallel YBW pass, or 0 at shallow depths (no YBW).
+    let seq_start = if depth >= MIN_SPLIT_DEPTH {
         let nw_abort = Arc::new(AtomicBool::new(false));
         let alpha_for_nw = alpha;
 
+        // ponytail: limit parallel siblings; tail searched sequentially after YBW pass
+        const YBW_MAX_SIBLINGS: usize = 6;
+        let ybw_end = rest.len().min(YBW_MAX_SIBLINGS);
+
         #[allow(clippy::type_complexity)]
-        let work: Vec<(Move, usize, Board, Arc<SearchState>, Arc<AtomicBool>)> = rest
+        let work: Vec<(Move, usize, Board, Arc<SearchState>, Arc<AtomicBool>)> = rest[..ybw_end]
             .iter()
             .enumerate()
             .map(|(i, &m)| (m, i + 1, board.clone(), state.clone(), nw_abort.clone()))
@@ -949,8 +958,13 @@ fn alpha_beta(
                 tried_quiet.push(m);
             }
         }
+        ybw_end
     } else {
-        // Sequential fallback for shallow depths
+        0
+    };
+
+    // Sequential pass: remaining siblings (tail beyond YBW limit, or all at shallow depth).
+    {
         let lmp_limit = if !in_check && depth <= 2 {
             LMP_BASE + depth as usize * 3 // depth 1: 8 quiet moves, depth 2: 11 quiet moves
         } else {
@@ -959,7 +973,8 @@ fn alpha_beta(
 
         let mut quiet_count = 0usize;
 
-        for (i, &m) in rest.iter().enumerate() {
+        for (j, &m) in rest[seq_start..].iter().enumerate() {
+            let i = seq_start + j;
             if state.abort.load(Ordering::Relaxed) {
                 break;
             }
@@ -1144,16 +1159,25 @@ fn quiescence(
             if m.from.is_some() && board.piece_at(m.to).is_some() {
                 continue;
             }
-            // Skip moves with negative SEE (losing check attempts)
-            if see_score(board, m) < 0 {
-                continue;
-            }
-            // Test if this move gives check
+            // Test if this move gives check, then apply safety filter — combined in one do/undo
             let tok = board.do_move(m);
             let gives_check = is_in_check(board, board.side_to_move);
             if !gives_check {
                 board.undo_move(tok);
                 continue;
+            }
+            // Safety: skip if the checking piece can be immediately recaptured at a loss.
+            // Promoting moves are exempt (promotion value offsets the risk).
+            if !m.promote {
+                let mover_val = PIECE_VALUE[m.piece_kind.index()];
+                let unsafe_check = generate_legal_captures(board)
+                    .iter()
+                    .filter(|r| r.to == m.to)
+                    .any(|r| PIECE_VALUE[r.piece_kind.index()] < mover_val);
+                if unsafe_check {
+                    board.undo_move(tok);
+                    continue;
+                }
             }
             let score = -quiescence(state, board, -beta, -alpha, ply + 1, qply + 1);
             board.undo_move(tok);
