@@ -1463,50 +1463,69 @@ fn update_quiet_heuristics(
     }
 }
 
-/// Static Exchange Evaluation — estimates net material gain from a capture sequence.
+/// Static Exchange Evaluation — net material gain from a capture sequence on m.to.
 ///
-/// Algorithm (2-ply lookahead):
-///   gain_1 = victim_value − attacker_value  (immediate capture)
-///   if gain_1 >= 0: safe regardless of recapture → return gain_1
-///   else: check if opponent can recapture on the target square
-///     no recapture → return victim_value  (free piece!)
-///     recapture    → return gain_1        (losing capture, goes last)
+/// Fast path: when the raw trade (victim − base attacker) is non-losing, the
+/// capture is at worst an equal trade, so we return that lower bound without
+/// touching the board — this keeps the hot move-ordering path cheap.
 ///
-/// This correctly handles the common "undefended piece" case where a heavy piece
-/// captures a lighter one that is actually free (no defender).
-#[inline]
+/// Slow path: only losing-looking captures (victim < attacker) run the full
+/// recursive exchange. `do_move`/`undo_move` keep the board exact, so pins,
+/// legality, and X-rays unblocked by a vacating piece are handled correctly.
+/// The opponent may decline to recapture (modelled by `max(0, ..)` in
+/// `see_recapture`); the initial move is never clamped so ordering still sees
+/// that a sac is losing.
 fn see_score(board: &mut Board, m: Move) -> i32 {
     // Only board moves can be captures; drops never are
     if m.from.is_none() {
         return 0;
     }
-
     let Some(cap) = board.piece_at(m.to) else { return 0 };
 
     let victim_val = PIECE_VALUE[cap.kind.index()];
-    // Use the post-move piece value: attacker may promote when landing on m.to.
-    let attacker_kind = if m.promote { m.piece_kind.promoted() } else { m.piece_kind };
-    let attacker_val = PIECE_VALUE[attacker_kind.index()];
-    let gain_1 = victim_val - attacker_val;
-
-    if gain_1 >= 0 {
-        // Winning or equal trade — safe even after recapture.
-        return gain_1;
-    }
-
-    // Potentially losing: only truly losing if opponent can recapture.
-    // Check POST-move so that X-ray attackers unblocked by our piece moving are visible.
-    let tok = board.do_move(m);
-    let opp_can_recapture = generate_legal_captures(board)
-        .iter()
-        .any(|r| r.to == m.to);
-    board.undo_move(tok);
-
-    if opp_can_recapture {
-        gain_1
+    let base_attacker_val = PIECE_VALUE[m.piece_kind.index()];
+    let promo_gain = if m.promote {
+        PIECE_VALUE[m.piece_kind.promoted().index()] - base_attacker_val
     } else {
-        victim_val // No recapture available: free piece
+        0
+    };
+
+    // Fast path: if recaptured, the promotion increment cancels (we'd lose the
+    // promoted piece), so the worst case is victim − base_attacker. When that is
+    // ≥ 0 the capture cannot lose material, so skip the simulation.
+    if victim_val >= base_attacker_val {
+        return victim_val + promo_gain - base_attacker_val;
     }
+
+    // Losing-looking: simulate the full exchange to see if it is actually losing.
+    let tok = board.do_move(m);
+    let score = victim_val + promo_gain - see_recapture(board, m.to, 0);
+    board.undo_move(tok);
+    score
+}
+
+/// Value of the best capture sequence on `sq` for the side to move (clamped at 0:
+/// the side may decline to recapture). `depth` guards against pathological recursion.
+fn see_recapture(board: &mut Board, sq: Square, depth: u32) -> i32 {
+    if depth >= 32 {
+        return 0;
+    }
+    // Least-valuable attacker that can capture on `sq`.
+    let lva = generate_legal_captures(board)
+        .into_iter()
+        .filter(|c| c.to == sq)
+        .min_by_key(|c| PIECE_VALUE[c.piece_kind.index()]);
+    let Some(m) = lva else { return 0 };
+
+    let victim_val = match board.piece_at(sq) {
+        Some(p) => PIECE_VALUE[p.kind.index()],
+        None => return 0, // sq empty: nothing to recapture
+    };
+    let tok = board.do_move(m);
+    // Decline the recapture if it loses material (stand-pat option).
+    let score = (victim_val - see_recapture(board, sq, depth + 1)).max(0);
+    board.undo_move(tok);
+    score
 }
 
 /// Returns 1 if the move just played (reflected in `board`) gives check, 0 otherwise.
@@ -1613,4 +1632,35 @@ fn order_moves(
         -(-8_000 + history.get(stm, m.piece_kind, m.to))
     });
     moves
+}
+
+#[cfg(test)]
+mod see_tests {
+    use super::*;
+    use crate::board::Board;
+
+    // Black rook on 5g captures a white pawn on 5e defended by a white pawn on 5d.
+    // RxP wins a pawn (100) but loses the rook (1040) to PxR → SEE = 100 - 1040 = -940.
+    #[test]
+    fn see_losing_capture_defended() {
+        let mut b = Board::from_sfen("k8/9/9/4p4/4p4/9/4R4/9/8K b - 1").unwrap();
+        let target = Square::from_shogi(5, 5);
+        let m = generate_legal_captures(&mut b)
+            .into_iter()
+            .find(|m| m.to == target)
+            .expect("rook capture on 5e");
+        assert_eq!(see_score(&mut b, m), -940);
+    }
+
+    // Same but no defender: the pawn is free → SEE = +100.
+    #[test]
+    fn see_free_capture_undefended() {
+        let mut b = Board::from_sfen("k8/9/9/9/4p4/9/4R4/9/8K b - 1").unwrap();
+        let target = Square::from_shogi(5, 5);
+        let m = generate_legal_captures(&mut b)
+            .into_iter()
+            .find(|m| m.to == target)
+            .expect("rook capture on 5e");
+        assert_eq!(see_score(&mut b, m), 100);
+    }
 }
