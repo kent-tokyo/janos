@@ -9,7 +9,8 @@
 //! poisoning entries that the main search later reads.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::board::Board;
 use crate::movegen::generate_legal_moves;
@@ -27,6 +28,11 @@ pub struct SpecState {
     pub tt: Arc<Tt>,
     /// Set when the whole search session ends; tasks must check this too.
     pub abort: Arc<AtomicBool>,
+    /// Shared node counter, used to throttle the time-limit check.
+    pub nodes: AtomicU64,
+    /// Search start; with `time_limit` lets tasks self-abort at the deadline.
+    pub start: Instant,
+    pub time_limit: Option<Duration>,
 }
 
 // ---- Per-task handle ----
@@ -160,6 +166,16 @@ fn spec_alpha_beta(
     depth: u32,
     ply: u32,
 ) -> i32 {
+    // Self-abort at the hard deadline. Without this, speculative tasks run an
+    // unbounded fixed-depth search and saturate the shared rayon pool, starving
+    // the main search that is supposed to set the abort flag — a pool-starvation
+    // hang. Throttled by node count to keep Instant::now() off the hot path.
+    if state.nodes.fetch_add(1, Ordering::Relaxed) & 0xFFF == 0
+        && let Some(lim) = state.time_limit
+        && state.start.elapsed() >= lim
+    {
+        state.abort.store(true, Ordering::Relaxed);
+    }
     // Abort check first — callers must not use the return value 0 as a real score
     if task_abort.load(Ordering::Relaxed) || state.abort.load(Ordering::Relaxed) {
         return 0;

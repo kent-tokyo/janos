@@ -1080,8 +1080,10 @@ fn alpha_beta(
 // Quiescence Search
 // ============================================================
 
-/// Resolve captures until the position is "quiet" before calling evaluate.
-/// Uses stand-pat as a lower bound; only searches captures (board moves to enemy squares).
+/// Resolve a position to quiescence before calling evaluate. Searches captures
+/// always, all legal replies while in check, and (only at qply 0) a few safe
+/// quiet checks. Bounded by QSEARCH_MAX_PLY so forcing-check lines can't recurse
+/// without end.
 fn quiescence(
     state: &Arc<SearchState>,
     board: &mut Board,
@@ -1103,6 +1105,14 @@ fn quiescence(
     }
     if state.abort.load(Ordering::Relaxed) || state.external_abort.load(Ordering::Relaxed) {
         return 0;
+    }
+
+    // Hard depth cap: terminate the quiescence even mid-check. Without this a
+    // perpetual-check line recurses (in-check expands ALL legal replies below)
+    // until the clock runs out — the move then blows past its byoyomi.
+    const QSEARCH_MAX_PLY: u32 = 10;
+    if qply >= QSEARCH_MAX_PLY {
+        return evaluate(board);
     }
 
     let in_check = is_in_check(board, board.side_to_move);
@@ -1139,9 +1149,11 @@ fn quiescence(
         };
     }
 
-    // Sort by SEE: biggest gain first
+    // Order by a cheap MVV-LVA-style key. Recursive see_score here is too costly
+    // per node (qsearch is the hottest path); the coarse capture ordering is
+    // plenty for quiescence and keeps each node fast enough to respect the clock.
     let mut ordered = moves;
-    ordered.sort_by_cached_key(|&m| -see_score(board, m));
+    ordered.sort_by_cached_key(|&m| -qsearch_order_key(board, m));
 
     for m in ordered {
         let tok = board.do_move(m);
@@ -1281,7 +1293,27 @@ impl SpeculativeSearcher {
         let spec_state = Arc::new(SpecState {
             tt: self.tt.clone(),
             abort: global_abort.clone(),
+            nodes: AtomicU64::new(0),
+            start: state.start,
+            time_limit: config.time_limit,
         });
+
+        // Watchdog: guarantee the search stops at the hard deadline regardless of
+        // rayon scheduling. The per-node elapsed checks rely on a thread getting
+        // scheduled to run them; when spec tasks + nested YBW saturate the pool,
+        // that can be starved and the move blows past its byoyomi. An OS timer
+        // thread is immune. It targets the per-search flags (recreated every
+        // call), so a late fire after an early return is harmless — and it must
+        // never touch `external_abort`, which is shared across searches.
+        if let Some(lim) = config.time_limit {
+            let st = state.clone();
+            let ga = global_abort.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(lim);
+                st.abort.store(true, Ordering::Relaxed);
+                ga.store(true, Ordering::Relaxed);
+            });
+        }
 
         let mut best_move = None;
         let mut best_score = NEG_INF;
@@ -1475,6 +1507,23 @@ fn update_quiet_heuristics(
             countermoves.update(stm.flip(), pm, m);
         }
     }
+}
+
+/// Cheap MVV-LVA-style ordering key for quiescence: victim (+ promotion gain)
+/// minus the attacker value. No board mutation, no recursion — fast enough to
+/// call on every move at every qsearch node. Non-captures score by promotion
+/// gain alone (0 for plain quiet moves).
+#[inline]
+fn qsearch_order_key(board: &Board, m: Move) -> i32 {
+    let victim = board
+        .piece_at(m.to)
+        .map_or(0, |c| PIECE_VALUE[c.kind.index()]);
+    let promo = if m.promote {
+        PIECE_VALUE[m.piece_kind.promoted().index()] - PIECE_VALUE[m.piece_kind.index()]
+    } else {
+        0
+    };
+    victim + promo - PIECE_VALUE[m.piece_kind.index()]
 }
 
 /// Static Exchange Evaluation — net material gain from a capture sequence on m.to.
@@ -1678,5 +1727,36 @@ mod see_tests {
             .find(|m| m.to == target)
             .expect("rook capture on 5e");
         assert_eq!(see_score(&mut b, m), 100);
+    }
+
+    // Regression: a search with a tiny hard time limit and a huge max_depth must
+    // terminate near the limit, not run to depth 99. Before the watchdog fix the
+    // speculative tasks could saturate the rayon pool and starve the time check,
+    // hanging the move indefinitely — this test would then never return.
+    #[test]
+    fn search_respects_time_limit() {
+        use crate::tt::Tt;
+        let searcher = SpeculativeSearcher::new(Tt::new(8), 4);
+        let mut board = Board::startpos();
+        let config = SearchConfig {
+            max_depth: 99,
+            // Generous enough for depth 1 to complete in the slow debug build even
+            // under parallel-test rayon contention, so there is always a move;
+            // tiny next to a depth-99 search, which would never finish unbounded.
+            time_limit: Some(Duration::from_millis(1000)),
+            soft_limit: None,
+            multi_pv: 1,
+        };
+        let t0 = Instant::now();
+        let info = searcher.search(&mut board, config);
+        let elapsed = t0.elapsed();
+        eprintln!("search_respects_time_limit: returned in {elapsed:?}");
+        assert!(info.best_move.is_some(), "search returned no move");
+        // Generous ceiling for the debug build: the point is that it RETURNS
+        // (a regressed hang never would), well short of a depth-99 search.
+        assert!(
+            elapsed < Duration::from_secs(20),
+            "search overran its time limit: {elapsed:?}"
+        );
     }
 }
