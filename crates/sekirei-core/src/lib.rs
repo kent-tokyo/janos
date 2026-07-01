@@ -1,3 +1,8 @@
+//! Sekirei's engine library: board representation, move generation, search
+//! (sequential and speculative-parallel), NNUE evaluation, and SFEN/USI
+//! notation. See the crate's `README.md` for the overall project and
+//! `AGENTS.md` for the search/concurrency design constraints.
+
 pub mod bitboard;
 pub mod board;
 pub mod color;

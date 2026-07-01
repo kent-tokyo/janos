@@ -37,8 +37,11 @@ use crate::speculative::{SpecGroup, SpecState};
 use crate::square::Square;
 use crate::tt::{Bound, Tt, TtEntry};
 
+/// Score for the fastest forced mate; actual mate scores are offset by ply distance to mate.
 pub const MATE_SCORE: i32 = 900_000;
+/// Lower search score bound (effectively -infinity).
 pub const NEG_INF: i32 = -1_000_000;
+/// Upper search score bound (effectively +infinity).
 pub const POS_INF: i32 = 1_000_000;
 
 /// Minimum remaining depth to activate parallel young-brother search.
@@ -246,8 +249,11 @@ impl HistoryTable {
 // Public API
 // ============================================================
 
+/// Iterative-deepening search parameters.
 pub struct SearchConfig {
+    /// Maximum depth to search via iterative deepening.
     pub max_depth: u32,
+    /// Hard time budget; the search aborts as soon as this elapses.
     pub time_limit: Option<Duration>,
     /// Soft limit: exit after completing a depth if elapsed >= soft_limit and bestmove is stable.
     pub soft_limit: Option<Duration>,
@@ -266,12 +272,19 @@ impl Default for SearchConfig {
     }
 }
 
+/// Result of a completed (or aborted) search.
 pub struct SearchInfo {
+    /// Best move found, if any.
     pub best_move: Option<Move>,
+    /// Score of `best_move` in centipawns (or a mate score).
     pub score: i32,
+    /// Deepest iterative-deepening depth completed.
     pub depth: u32,
+    /// Total nodes visited across all depths.
     pub nodes: u64,
+    /// Wall-clock time spent searching.
     pub elapsed: Duration,
+    /// Transposition table occupancy, in permille (0-1000).
     pub hashfull: u32,
 }
 
@@ -299,6 +312,7 @@ struct SearchState {
 // Searcher
 // ============================================================
 
+/// Sequential (with YBW-parallel helper threads) iterative-deepening alpha-beta searcher.
 pub struct Searcher {
     tt: Arc<Tt>,
     /// Exposed for USI "stop" command — set to true to abort an in-progress search
@@ -306,6 +320,7 @@ pub struct Searcher {
 }
 
 impl Searcher {
+    /// Create a searcher backed by the given shared transposition table.
     pub fn new(tt: Arc<Tt>) -> Self {
         Searcher {
             tt,
@@ -318,6 +333,8 @@ impl Searcher {
         self.external_abort.clone()
     }
 
+    /// Run iterative-deepening search from the current position up to `config.max_depth`
+    /// or until a time limit / abort signal fires, returning the best line found.
     pub fn search(&self, board: &mut Board, config: SearchConfig) -> SearchInfo {
         self.external_abort.store(false, Ordering::Relaxed);
 
@@ -1230,11 +1247,17 @@ fn quiescence(
 
 /// Search statistics returned by `SpeculativeSearcher`
 pub struct SpecSearchInfo {
+    /// Best move found, if any.
     pub best_move: Option<Move>,
+    /// Score of `best_move` in centipawns (or a mate score).
     pub score: i32,
+    /// Deepest iterative-deepening depth completed.
     pub depth: u32,
+    /// Total nodes visited across all depths.
     pub nodes: u64,
+    /// Wall-clock time spent searching.
     pub elapsed: Duration,
+    /// Transposition table occupancy, in permille (0-1000).
     pub hashfull: u32,
     /// Number of depth iterations where speculation correctly predicted
     /// the best move (policy hit).
@@ -1256,6 +1279,8 @@ pub struct SpeculativeSearcher {
 }
 
 impl SpeculativeSearcher {
+    /// Create a speculative searcher that considers the top `top_n` candidate
+    /// replies for preemptive background search, backed by the given shared TT.
     pub fn new(tt: Arc<Tt>, top_n: usize) -> Self {
         SpeculativeSearcher {
             tt,
@@ -1274,6 +1299,8 @@ impl SpeculativeSearcher {
         self.tt.probe(hash).and_then(|e| e.mv)
     }
 
+    /// Run iterative-deepening search with preemptive speculative parallelism on
+    /// candidate replies, returning the best line plus speculation statistics.
     pub fn search(&self, board: &mut Board, config: SearchConfig) -> SpecSearchInfo {
         self.external_abort.store(false, Ordering::Relaxed);
         let global_abort = Arc::new(AtomicBool::new(false));

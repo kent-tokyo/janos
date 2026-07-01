@@ -1,16 +1,23 @@
+//! `Move`: a board move or a drop-from-hand.
+
 use crate::piece::{Piece, PieceKind};
 use crate::square::Square;
 
 /// A shogi move: either a board move or a drop
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Move {
+    /// Board square this move originates from, or `None` for a drop from hand.
     pub from: Option<Square>, // None = drop
+    /// Destination square.
     pub to: Square,
+    /// Piece kind before promotion (or the kind being dropped).
     pub piece_kind: PieceKind, // kind before promotion (or the dropped kind)
+    /// Whether the piece promotes upon completing this move.
     pub promote: bool,
 }
 
 impl Move {
+    /// Construct a normal board move from `from` to `to`.
     #[inline]
     pub fn normal(from: Square, to: Square, kind: PieceKind, promote: bool) -> Self {
         Move {
@@ -21,6 +28,7 @@ impl Move {
         }
     }
 
+    /// Construct a drop of `kind` from hand onto `to`.
     #[inline]
     pub fn drop(to: Square, kind: PieceKind) -> Self {
         Move {
@@ -31,6 +39,7 @@ impl Move {
         }
     }
 
+    /// True if this move is a drop from hand rather than a board move.
     #[inline]
     pub fn is_drop(self) -> bool {
         self.from.is_none()

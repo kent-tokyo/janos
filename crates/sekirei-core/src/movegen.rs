@@ -1,3 +1,5 @@
+//! Pseudo-legal and legal move generation, plus check detection.
+
 use crate::bitboard::Bitboard;
 use crate::board::Board;
 use crate::color::Color;

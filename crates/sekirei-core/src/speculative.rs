@@ -24,7 +24,9 @@ const RUNNING: i32 = i32::MAX;
 
 // ---- Shared context for speculative tasks ----
 
+/// Shared context handed to every speculative search task.
 pub struct SpecState {
+    /// Transposition table shared with the main search.
     pub tt: Arc<Tt>,
     /// Set when the whole search session ends; tasks must check this too.
     pub abort: Arc<AtomicBool>,
@@ -32,6 +34,7 @@ pub struct SpecState {
     pub nodes: AtomicU64,
     /// Search start; with `time_limit` lets tasks self-abort at the deadline.
     pub start: Instant,
+    /// Optional deadline for the whole search, relative to `start`.
     pub time_limit: Option<Duration>,
 }
 

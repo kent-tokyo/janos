@@ -1,26 +1,43 @@
+//! `PieceKind` and `Piece`: shogi piece types and colored piece instances.
+
 use crate::color::Color;
 
 /// Piece kind (14 variants: 8 base + 6 promoted)
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PieceKind {
-    Fu = 0,       // Pawn
-    Kyou = 1,     // Lance
-    Kei = 2,      // Knight
-    Gin = 3,      // Silver
-    Kin = 4,      // Gold
-    Kaku = 5,     // Bishop
-    Hisha = 6,    // Rook
-    Ou = 7,       // King
-    Tokin = 8,    // Promoted pawn
-    Narikyo = 9,  // Promoted lance
+    /// Pawn ("fu").
+    Fu = 0, // Pawn
+    /// Lance ("kyou").
+    Kyou = 1, // Lance
+    /// Knight ("kei").
+    Kei = 2, // Knight
+    /// Silver general ("gin").
+    Gin = 3, // Silver
+    /// Gold general ("kin").
+    Kin = 4, // Gold
+    /// Bishop ("kaku").
+    Kaku = 5, // Bishop
+    /// Rook ("hisha").
+    Hisha = 6, // Rook
+    /// King ("ou") — cannot promote and cannot be held in hand.
+    Ou = 7, // King
+    /// Promoted pawn ("tokin") — moves like a gold general.
+    Tokin = 8, // Promoted pawn
+    /// Promoted lance ("narikyo") — moves like a gold general.
+    Narikyo = 9, // Promoted lance
+    /// Promoted knight ("narikei") — moves like a gold general.
     Narikei = 10, // Promoted knight
+    /// Promoted silver ("narigin") — moves like a gold general.
     Narigin = 11, // Promoted silver
-    Uma = 12,     // Promoted bishop (horse)
-    Ryu = 13,     // Promoted rook   (dragon)
+    /// Promoted bishop ("uma" / horse) — bishop moves plus one step orthogonally.
+    Uma = 12, // Promoted bishop (horse)
+    /// Promoted rook ("ryu" / dragon) — rook moves plus one step diagonally.
+    Ryu = 13, // Promoted rook   (dragon)
 }
 
 impl PieceKind {
+    /// Total number of piece kinds (8 base + 6 promoted).
     pub const COUNT: usize = 14;
 
     /// True for pieces that can promote (Fu / Kyou / Kei / Gin / Kaku / Hisha)
@@ -80,6 +97,7 @@ impl PieceKind {
         )
     }
 
+    /// True for promoted piece kinds (Tokin / Narikyo / Narikei / Narigin / Uma / Ryu).
     #[inline]
     pub const fn is_promoted(self) -> bool {
         matches!(
@@ -93,6 +111,7 @@ impl PieceKind {
         )
     }
 
+    /// Numeric encoding matching the `#[repr(u8)]` discriminant (0..=13); inverse of `from_u8`.
     #[inline]
     pub const fn index(self) -> usize {
         self as usize
@@ -123,11 +142,14 @@ impl PieceKind {
 /// A piece on the board: color + kind
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Piece {
+    /// Which side owns this piece.
     pub color: Color,
+    /// The piece's kind (pawn, king, promoted rook, etc.).
     pub kind: PieceKind,
 }
 
 impl Piece {
+    /// Construct a piece from a color and kind.
     #[inline]
     pub const fn new(color: Color, kind: PieceKind) -> Self {
         Piece { color, kind }

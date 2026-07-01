@@ -1,3 +1,5 @@
+//! Perft: leaf-node counting for move-generation correctness testing.
+
 use crate::board::Board;
 use crate::movegen::generate_legal_moves;
 

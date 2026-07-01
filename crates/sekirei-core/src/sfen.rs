@@ -19,6 +19,7 @@ use crate::square::Square;
 
 // ---- Piece ↔ char ----
 
+/// Map a piece kind to its SFEN letter (base letter; promotion is a separate `+` prefix).
 pub fn piece_to_sfen_char(kind: PieceKind) -> char {
     match kind {
         PieceKind::Fu => 'P',

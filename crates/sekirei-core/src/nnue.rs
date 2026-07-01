@@ -46,21 +46,29 @@ use crate::square::Square;
 
 // ---- Dimensions ----
 
+/// Board-feature input dimension: square × piece kind × own/opp perspective.
 pub const BOARD_INPUT: usize = 81 * 14 * 2; // 2 268  (piece-square × own/opp)
 
 // Hand piece thresholds: "has ≥ N of kind K" binary features.
 // Max counts: Fu:18, Kyou:4, Kei:4, Gin:4, Kin:4, Kaku:2, Hisha:2 → 38 total.
 // Grouped as: 38 thresholds × (2 hand-colors × 2 perspectives) = 152 features.
+/// Number of distinct "has ≥ N of kind K in hand" thresholds across all hand piece kinds.
 pub const HAND_THRESHOLDS: usize = 38;
+/// Hand-feature input dimension: thresholds × (2 hand-colors × 2 perspectives).
 pub const HAND_INPUT: usize = HAND_THRESHOLDS * 4; // 152
+/// Total feature-vector input dimension (board features + hand features).
 pub const INPUT: usize = BOARD_INPUT + HAND_INPUT; // 2 420
 
+/// Feature-transformer (first hidden layer) size, per perspective.
 pub const L1: usize = 256; // feature-transformer neurons per perspective
+/// Second hidden layer size.
 pub const L2: usize = 32; // hidden layer neurons
 
 // Cumulative threshold offsets for each hand kind (Fu=0..Hisha=6):
 // Fu:18 → [0], Kyou:4 → [18], Kei:4 → [22], Gin:4 → [26], Kin:4 → [30], Kaku:2 → [34], Hisha:2 → [36]
+/// Cumulative threshold offset for each hand piece kind, indexed Fu=0..Hisha=6.
 pub const HAND_OFFSETS: [usize; 7] = [0, 18, 22, 26, 30, 34, 36];
+/// Maximum in-hand count for each hand piece kind, indexed Fu=0..Hisha=6.
 pub const HAND_MAX: [u8; 7] = [18, 4, 4, 4, 4, 2, 2];
 
 /// Feature index for "hand_color has ≥ count of kind K from perspective's view".
@@ -89,12 +97,19 @@ const fn lcg(s: u64) -> u64 {
 // Weight container
 // ============================================================
 
+/// Loaded (or LCG-default) NNUE weight matrices for all layers.
 pub struct NnueWeights {
+    /// Feature-transformer weights: one `[i16; L1]` row per input feature.
     pub ft: Vec<[i16; L1]>, // INPUT entries — quantised i16
+    /// Feature-transformer bias, added to every accumulator on init.
     pub ft_bias: [i16; L1],
+    /// L2 weights: 2×L1 rows (us-perspective first, then them) × L2 outputs.
     pub l2: Vec<[f32; L2]>, // 2*L1 entries — f32 (us-perspective first, then them)
+    /// L2 layer bias.
     pub l2_bias: [f32; L2],
+    /// Output layer weights, one per L2 neuron.
     pub out: [f32; L2],
+    /// Output layer bias.
     pub out_bias: f32,
 }
 
@@ -300,6 +315,7 @@ pub fn feature_index(sq: Square, kind: PieceKind, piece_color: Color, perspectiv
 /// Two L1-vectors (one per Color perspective), updated incrementally.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NnueAcc {
+    /// Per-perspective (Black, White) accumulator vectors.
     pub values: [[i16; L1]; 2],
 }
 
@@ -312,7 +328,7 @@ impl NnueAcc {
     }
 
     /// Full recompute from a board mailbox + hand counts.
-    /// hand[color_idx][kind_idx] = count of that piece in hand.
+    /// `hand[color_idx][kind_idx]` = count of that piece in hand.
     pub fn refresh(&mut self, mailbox: &[Option<(PieceKind, Color)>; 81], hand: &[[u8; 7]; 2]) {
         self.values = [weights().ft_bias; 2];
         for (i, cell) in mailbox.iter().enumerate() {
@@ -360,6 +376,7 @@ impl NnueAcc {
 
     // --- Incremental piece updates ---
 
+    /// Incrementally update the accumulator for a piece placed at `sq`.
     pub fn add_piece(&mut self, sq: Square, kind: PieceKind, color: Color) {
         for p in [Color::Black, Color::White] {
             let feat = feature_index(sq, kind, color, p);
@@ -367,6 +384,7 @@ impl NnueAcc {
         }
     }
 
+    /// Incrementally update the accumulator for a piece removed from `sq`.
     pub fn remove_piece(&mut self, sq: Square, kind: PieceKind, color: Color) {
         for p in [Color::Black, Color::White] {
             let feat = feature_index(sq, kind, color, p);

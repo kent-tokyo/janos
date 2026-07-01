@@ -10,14 +10,17 @@
 //! and is discarded as a cache miss — safe, never incorrect.
 //!
 //! Data word bit layout (64 bits):
-//!   [63:32]  score (i32, full range)
-//!   [31:25]  depth (7 bits, 0-127)
-//!   [24:23]  bound (2 bits: 0=Exact, 1=Lower, 2=Upper)
-//!   [22:16]  to    (7 bits, square index 0-80)
-//!   [15:9]   from  (7 bits, 0-80 = square, 81 = drop)
-//!   [8]      promote (1 bit)
-//!   [7:4]    piece_kind (4 bits, 0-13)
-//!   [3:0]    (spare)
+//!
+//! ```text
+//! [63:32]  score (i32, full range)
+//! [31:25]  depth (7 bits, 0-127)
+//! [24:23]  bound (2 bits: 0=Exact, 1=Lower, 2=Upper)
+//! [22:16]  to    (7 bits, square index 0-80)
+//! [15:9]   from  (7 bits, 0-80 = square, 81 = drop)
+//! [8]      promote (1 bit)
+//! [7:4]    piece_kind (4 bits, 0-13)
+//! [3:0]    (spare)
+//! ```
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,17 +32,24 @@ use crate::square::Square;
 /// How the stored score should be interpreted relative to alpha/beta
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Bound {
-    Exact = 0, // true score
-    Lower = 1, // fail-high: true score >= stored (beta cutoff node)
-    Upper = 2, // fail-low:  true score <= stored (all moves failed low)
+    /// The stored score is the true score.
+    Exact = 0,
+    /// Fail-high: the true score is >= the stored score (beta cutoff node).
+    Lower = 1,
+    /// Fail-low: the true score is <= the stored score (all moves failed low).
+    Upper = 2,
 }
 
 /// A decoded TT entry
 #[derive(Clone, Copy, Debug)]
 pub struct TtEntry {
+    /// Search score for the stored position.
     pub score: i32,
+    /// Depth the score was searched to.
     pub depth: u8,
+    /// How `score` should be interpreted relative to alpha/beta.
     pub bound: Bound,
+    /// Best move found for the position, if any.
     pub mv: Option<Move>,
 }
 
@@ -177,10 +187,12 @@ impl Tt {
         slot.key.store(hash ^ data, Ordering::Relaxed);
     }
 
+    /// Number of slots in the table.
     pub fn len(&self) -> usize {
         self.table.len()
     }
 
+    /// True if the table has zero slots.
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }

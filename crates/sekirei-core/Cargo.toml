@@ -11,3 +11,6 @@ rayon = "1"
 
 [lib]
 name = "sekirei_core"
+
+[lints.rust]
+missing_docs = "warn"

@@ -2,9 +2,12 @@
 #![allow(clippy::needless_range_loop)]
 //!
 //! Layout of the flat table (KEYS):
-//!   [0 .. 2268)   piece keys:     index = sq * 28 + color * 14 + kind
-//!   [2268 .. 2534) hand delta keys: index = 2268 + color * 7 * 19 + kind_idx * 19 + (count-1)
-//!   [2534]         side-to-move key (XOR in when Black is to move)
+//!
+//! ```text
+//! [0 .. 2268)    piece keys:      index = sq * 28 + color * 14 + kind
+//! [2268 .. 2534) hand delta keys: index = 2268 + color * 7 * 19 + kind_idx * 19 + (count-1)
+//! [2534]         side-to-move key (XOR in when Black is to move)
+//! ```
 //!
 //! Hand delta: XOR in `hand_delta(color, kind, new_count)` when the count goes up by 1,
 //! XOR in the same value when the count goes down by 1 (XOR is self-inverse).

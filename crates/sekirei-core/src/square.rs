@@ -1,3 +1,5 @@
+//! `Square`: file-major board coordinates, and `Direction` for move offsets.
+
 /// Square encoding — file-major layout
 ///
 /// bit_index = file_0 * 9 + rank_0
@@ -11,8 +13,10 @@
 pub struct Square(pub u8); // 0..81
 
 impl Square {
+    /// Number of squares on a shogi board (9x9).
     pub const NUM: usize = 81;
 
+    /// Construct from a raw 0..81 index.
     #[inline]
     pub const fn from_index(i: u8) -> Self {
         debug_assert!(i < 81);
@@ -31,16 +35,19 @@ impl Square {
         Self::from_fr(9 - file, rank - 1)
     }
 
+    /// Raw 0..81 index of this square.
     #[inline]
     pub const fn index(self) -> u8 {
         self.0
     }
 
+    /// Zero-based file index (0..9).
     #[inline]
     pub const fn file_0(self) -> u8 {
         self.0 / 9
     }
 
+    /// Zero-based rank index (0..9).
     #[inline]
     pub const fn rank_0(self) -> u8 {
         self.0 % 9
@@ -80,21 +87,34 @@ impl Square {
 /// E = toward file 9 (right from Black's perspective, decreasing file_0)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Direction {
-    N,        // (0, -1)
-    S,        // (0, +1)
-    E,        // (-1, 0)
-    W,        // (+1, 0)
-    NE,       // (-1, -1)
-    NW,       // (+1, -1)
-    SE,       // (-1, +1)
-    SW,       // (+1, +1)
+    /// North (toward rank 1; "forward" for Black).
+    N, // (0, -1)
+    /// South (toward rank 9; "forward" for White).
+    S, // (0, +1)
+    /// East (toward file 9, decreasing file_0).
+    E, // (-1, 0)
+    /// West (toward file 1, increasing file_0).
+    W, // (+1, 0)
+    /// Northeast.
+    NE, // (-1, -1)
+    /// Northwest.
+    NW, // (+1, -1)
+    /// Southeast.
+    SE, // (-1, +1)
+    /// Southwest.
+    SW, // (+1, +1)
+    /// Black knight jump toward file 9 (two ranks toward rank 1, one file east).
     KnightN1, // (-1, -2)  Black knight jump toward file 9
+    /// Black knight jump toward file 1 (two ranks toward rank 1, one file west).
     KnightN2, // (+1, -2)  Black knight jump toward file 1
+    /// White knight jump toward file 9 (two ranks toward rank 9, one file east).
     KnightS1, // (-1, +2)  White knight jump toward file 9
+    /// White knight jump toward file 1 (two ranks toward rank 9, one file west).
     KnightS2, // (+1, +2)  White knight jump toward file 1
 }
 
 impl Direction {
+    /// (file, rank) offset for this direction.
     #[inline]
     pub const fn delta(self) -> (i8, i8) {
         match self {

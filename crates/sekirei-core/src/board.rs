@@ -1,3 +1,5 @@
+//! `Board`: full shogi position representation (mailbox + bitboards + hands),
+//! with `do_move`/`undo_move` for search and `from_sfen`/SFEN round-tripping.
 #![allow(clippy::needless_range_loop)] // mailbox/snapshot init loops are clearer with explicit indices
 use crate::bitboard::Bitboard;
 use crate::color::Color;
@@ -54,7 +56,9 @@ pub struct Board {
     /// Mailbox for O(1) piece lookup by square
     mailbox: [Option<Piece>; Square::NUM],
     hand: [Hand; 2],
+    /// Side to move.
     pub side_to_move: Color,
+    /// Half-move count since the start of the game.
     pub ply: u32,
     hash: u64,
     /// NNUE accumulator — kept in sync with the board position via inverse deltas
@@ -91,22 +95,27 @@ impl Board {
 
     // ---- Public read API ----
 
+    /// Piece occupying `sq`, if any.
     pub fn piece_at(&self, sq: Square) -> Option<Piece> {
         self.mailbox[sq.index() as usize]
     }
 
+    /// Bitboard of all pieces of the given color and kind.
     pub fn pieces(&self, color: Color, kind: PieceKind) -> Bitboard {
         self.piece_bb[color.index()][kind.index()]
     }
 
+    /// Occupancy bitboard for all of `color`'s pieces.
     pub fn occ_for(&self, color: Color) -> Bitboard {
         self.occ[color.index()]
     }
 
+    /// Occupancy bitboard for all pieces on the board.
     pub fn occ(&self) -> Bitboard {
         self.occ[0] | self.occ[1]
     }
 
+    /// `color`'s captured pieces held in hand.
     pub fn hand(&self, color: Color) -> &Hand {
         &self.hand[color.index()]
     }

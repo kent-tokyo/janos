@@ -18,6 +18,8 @@ jobs:
         run: cargo fmt --check
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
+      - name: doc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p sekirei-core --no-deps
       - name: test
         run: cargo test --release
       - name: build

@@ -1,3 +1,5 @@
+//! `Hand`: per-color counts of captured pieces available to drop back onto the board.
+
 use crate::piece::PieceKind;
 
 // The 7 piece kinds that can be held in hand (all base pieces except Ou)
@@ -32,10 +34,12 @@ pub struct Hand {
 }
 
 impl Hand {
+    /// Empty hand (zero of every piece kind).
     pub const fn new() -> Self {
         Hand { counts: [0; 7] }
     }
 
+    /// Count of `kind` currently held in hand.
     pub fn get(&self, kind: PieceKind) -> u8 {
         self.counts[kind_index(kind)]
     }
