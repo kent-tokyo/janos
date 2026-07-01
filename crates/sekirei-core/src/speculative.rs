@@ -272,3 +272,127 @@ fn spec_alpha_beta(
     );
     best
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Hand-verified mate-in-1 for black: white king cornered at (file9,rank1);
+    // black king at (file7,rank2) covers both diagonal escapes; black rook
+    // slides to (file9,rank5) delivering unstoppable check down the file. See
+    // search.rs::regression_tests for the full derivation (same position is
+    // reused there for the sibling `alpha_beta` regression test).
+    const MATE_IN_1_SFEN: &str = "k8/2K6/9/9/4R4/9/9/9/9 b - 1";
+
+    // Black rook on file9 with a clear path to the white king: `policy::top_n`
+    // (pseudo-legal, per its doc comment) includes the rook-takes-king move
+    // among its candidates for this position.
+    const KING_CAPTURE_CANDIDATE_SFEN: &str = "k8/9/9/9/R8/9/9/9/9 b - 1";
+
+    fn spec_state() -> Arc<SpecState> {
+        Arc::new(SpecState {
+            tt: Tt::new(1),
+            abort: Arc::new(AtomicBool::new(false)),
+            nodes: AtomicU64::new(0),
+            start: Instant::now(),
+            time_limit: None,
+        })
+    }
+
+    // Regression: `spec_alpha_beta`'s terminal-mate return used to be written
+    // as `-900_000 - ply`, an independent copy of the same formula bug fixed in
+    // search.rs's `alpha_beta`. The flipped sign on the ply term made a mate
+    // discovered at a deeper ply score higher in magnitude than the identical
+    // mate discovered shallower. Rather than a second hand-built position (hard
+    // to verify and slow to brute-force at this function's fixed search depth),
+    // this calls `spec_alpha_beta` directly on the SAME verified mate-in-1
+    // position with two different starting `ply` values, isolating the
+    // formula's dependence on its ply argument. depth=4 is enough for the
+    // recursion to reach the real movegen/terminal check one ply down (this
+    // function has no depth==0 quiescence detour, unlike alpha_beta).
+    #[test]
+    fn shorter_ply_mate_scores_higher_in_spec_alpha_beta() {
+        let task_abort = AtomicBool::new(false);
+
+        let mut board_a = Board::from_sfen(MATE_IN_1_SFEN).unwrap();
+        let score_shallow = spec_alpha_beta(
+            &spec_state(),
+            &task_abort,
+            &mut board_a,
+            -1_000_000,
+            1_000_000,
+            4,
+            1,
+        );
+
+        let mut board_b = Board::from_sfen(MATE_IN_1_SFEN).unwrap();
+        let score_deep = spec_alpha_beta(
+            &spec_state(),
+            &task_abort,
+            &mut board_b,
+            -1_000_000,
+            1_000_000,
+            4,
+            3,
+        );
+
+        const MATE_SCORE: i32 = crate::search::MATE_SCORE;
+        assert!(
+            score_shallow >= MATE_SCORE - 1000 && score_deep >= MATE_SCORE - 1000,
+            "both calls must report a forced mate: {score_shallow} / {score_deep}"
+        );
+        assert!(
+            score_shallow > score_deep,
+            "mate found at the shallower ply ({score_shallow}) must score higher than the \
+             identical mate found 2 plies deeper ({score_deep})"
+        );
+    }
+
+    // Regression: `policy::top_n` generates pseudo-legally (per its own doc
+    // comment), so its candidates can include a move landing on the enemy
+    // king's square. Before the fix, `SpecGroup::spawn`'s spawned closure
+    // called `do_move` on such a candidate unconditionally, panicking inside
+    // `hand.add_captured(Ou)`. Since the closure runs on a background rayon
+    // thread (fire-and-forget, not joined), a panic there would not fail this
+    // test directly — so this polls `SpecGroup::poll` for the guarded result
+    // (0, per the guard at the top of the spawned closure) instead of relying
+    // on the panic to propagate.
+    #[test]
+    fn spec_group_spawn_skips_king_capture_without_panicking() {
+        use crate::square::Square;
+
+        let board = Board::from_sfen(KING_CAPTURE_CANDIDATE_SFEN).unwrap();
+        let tt = Tt::new(1);
+        let king_sq = Square::from_shogi(9, 1);
+        let candidates = policy::top_n(&board, &tt, 50);
+        let king_capture_move = candidates
+            .iter()
+            .copied()
+            .find(|m| m.to == king_sq)
+            .expect("expected a pseudo-legal move targeting the enemy king in this position");
+
+        let state = Arc::new(SpecState {
+            tt: tt.clone(),
+            abort: Arc::new(AtomicBool::new(false)),
+            nodes: AtomicU64::new(0),
+            start: Instant::now(),
+            time_limit: None,
+        });
+        let group = SpecGroup::spawn(&board, &state, 2, 50);
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut result = None;
+        while Instant::now() < deadline {
+            if let Some(r) = group.poll(king_capture_move) {
+                result = Some(r);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            result,
+            Some(0),
+            "king-capture speculative task should short-circuit to 0 without panicking"
+        );
+    }
+}

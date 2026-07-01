@@ -419,13 +419,11 @@ mod tests {
         );
     }
 
-    /// Validate 10,000,000 random positions:
+    /// Validate `target_validations` random positions:
     ///   - perft(1) matches generate_legal_moves().len()
     ///   - do_move + undo_move is a hash-preserving round-trip for every legal move
     ///   - terminal positions (0 legal moves) are checkmates (is_in_check == true)
-    #[test]
-    #[ignore = "slow: run with --release (~2 min)"]
-    fn random_perft_mated_10m() {
+    fn random_perft_mated_fuzz(target_validations: u64) {
         use movegen::{generate_legal_moves, is_in_check};
         use mv::MoveToken;
         use perft::perft;
@@ -445,7 +443,7 @@ mod tests {
         // Stack of MoveTokens for the current game; used for clean undo on reset.
         let mut game_toks: Vec<MoveToken> = Vec::with_capacity(256);
 
-        while validations < 10_000_000 {
+        while validations < target_validations {
             let moves = generate_legal_moves(&mut board);
 
             // ── Perft(1) validation ──────────────────────────────────────────
@@ -496,6 +494,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// CI-sized slice of `random_perft_mated_fuzz`: the AGENTS.md DoD calls for
+    /// 10,000,000 random Perft/Mated-search validations, but that variant is
+    /// `#[ignore]`d for being too slow for every-push CI — meaning until this
+    /// test, the randomized fuzz coverage never ran in CI at all. 10,000
+    /// validations run in well under a second and catch the same class of
+    /// regression (movegen/perft mismatch, undo not restoring hash, a
+    /// non-check terminal position) on every push.
+    #[test]
+    fn random_perft_mated_10k() {
+        random_perft_mated_fuzz(10_000);
+    }
+
+    /// Full AGENTS.md DoD ("10,000,000 random Perft/Mated-search validations");
+    /// run manually or in a nightly job, not on every push.
+    #[test]
+    #[ignore = "slow: run with --release (~2 min)"]
+    fn random_perft_mated_10m() {
+        random_perft_mated_fuzz(10_000_000);
     }
 
     /// Transpositions must produce the same hash.

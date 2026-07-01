@@ -204,3 +204,19 @@ fn floor_pow2(n: usize) -> usize {
         1usize << (usize::BITS - 1 - n.leading_zeros())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression test for a bug where `Tt::new` computed capacity as
+    // `(bytes/16).next_power_of_two() >> 1`. When bytes/16 was already an
+    // exact power of two (as it is for a round size_mb like 64), that
+    // formula silently halved the requested capacity. 64 MiB / 16 bytes
+    // == 4,194,304 == 1<<22 exactly, which is the case that used to trigger it.
+    #[test]
+    fn new_does_not_halve_power_of_two_capacity() {
+        let tt = Tt::new(64);
+        assert_eq!(tt.len(), 1 << 22);
+    }
+}

@@ -547,3 +547,41 @@ pub fn generate_legal_captures(board: &mut Board) -> Vec<Move> {
     }
     legals
 }
+
+#[cfg(test)]
+mod king_capture_tests {
+    use super::*;
+
+    // Regression: pseudo-legal generation (`generate_moves`) can include a move
+    // whose destination is the opponent's king — e.g. a rook with a clear file
+    // to the enemy king generates that square as a normal sliding destination,
+    // since `generate_moves` has no concept of "kings can't be captured". Before
+    // the fix, `generate_legal_moves`/`generate_legal_captures` called
+    // `do_move` on such a move unconditionally, which panicked inside
+    // `hand.add_captured(Ou)`. Black rook on file9 with a clear path to the
+    // white king guarantees such a move exists among black's pseudo-legal
+    // moves in this position.
+    const KING_CAPTURE_CANDIDATE_SFEN: &str = "k8/9/9/9/R8/9/9/9/9 b - 1";
+
+    #[test]
+    fn generate_legal_moves_skips_king_capture_without_panicking() {
+        let mut board = Board::from_sfen(KING_CAPTURE_CANDIDATE_SFEN).unwrap();
+        let king_sq = Square::from_shogi(9, 1);
+        let legals = generate_legal_moves(&mut board);
+        assert!(
+            !legals.iter().any(|m| m.to == king_sq),
+            "a king-capture move must never appear in legal moves"
+        );
+    }
+
+    #[test]
+    fn generate_legal_captures_skips_king_capture_without_panicking() {
+        let mut board = Board::from_sfen(KING_CAPTURE_CANDIDATE_SFEN).unwrap();
+        let king_sq = Square::from_shogi(9, 1);
+        let legals = generate_legal_captures(&mut board);
+        assert!(
+            !legals.iter().any(|m| m.to == king_sq),
+            "a king-capture move must never appear in legal captures"
+        );
+    }
+}

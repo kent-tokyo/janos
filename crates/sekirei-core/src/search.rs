@@ -1760,3 +1760,118 @@ mod see_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::board::Board;
+
+    fn fresh_state(tt: Arc<Tt>) -> Arc<SearchState> {
+        Arc::new(SearchState {
+            tt,
+            nodes: AtomicU64::new(0),
+            abort: AtomicBool::new(false),
+            external_abort: Arc::new(AtomicBool::new(false)),
+            start: Instant::now(),
+            time_limit: None,
+            killers: KillerTable::new(),
+            history: HistoryTable::new(),
+            countermoves: CountermoveTable::new(),
+        })
+    }
+
+    // Regression: root_search_inner used to always store Bound::Exact, even when
+    // the root search failed high (alpha reached hi without exhausting the move
+    // list). A fail-high result is only a lower bound on the true score, so
+    // storing it as Exact corrupted later TT probes that trusted an exact score.
+    //
+    // `hi` here is set far below any realistic evaluation so the very first move
+    // fails high immediately, forcing the bug's exact trigger condition.
+    #[test]
+    fn root_fail_high_stores_lower_bound_not_exact() {
+        let mut board = Board::startpos();
+        let moves = generate_legal_moves(&mut board);
+        let tt = Tt::new(1);
+        let state = fresh_state(tt.clone());
+        let hash = board.hash();
+
+        root_search_inner(&state, &mut board, 1, &moves, NEG_INF, -500_000);
+
+        let entry = tt
+            .probe(hash)
+            .expect("root_search_inner should have stored a TT entry");
+        assert_eq!(entry.bound, Bound::Lower);
+    }
+
+    // Two hand-built, hand-verified positions for the mate-direction regression
+    // tests below.
+    //
+    // MATE_IN_1_SFEN: white king cornered at (file9,rank1); black king at
+    // (file7,rank2) covers both diagonal escapes; black rook slides to
+    // (file9,rank5) delivering unstoppable check down the file. Verified: engine
+    // reports score == MATE_SCORE - 1 (899_999) at depth 1.
+    const MATE_IN_1_SFEN: &str = "k8/2K6/9/9/4R4/9/9/9/9 b - 1";
+
+    // Regression: the mate score formula `-(MATE_SCORE - ply)` was once written
+    // with the ply term's sign flipped (`-900_000 - ply`), which made a mate
+    // discovered at a *deeper* ply score higher in magnitude than the identical
+    // mate discovered shallower — the engine would then prefer a search path
+    // that "finds" the win later over one that finds it sooner. Rather than
+    // hand-building a second, genuinely-slower mate position (hard to verify by
+    // hand and slow to brute-force-verify), this calls `alpha_beta` directly on
+    // the SAME verified mate-in-1 position with two different starting `ply`
+    // values: the formula must be correct for the ply argument on its own,
+    // independent of which position produced it. depth=2 is the minimum that
+    // lets the recursive call one ply down reach the real movegen/terminal
+    // check in alpha_beta instead of diverting to quiescence (depth=0).
+    // This bug occurred independently in two call sites (alpha_beta in this
+    // file, and spec_alpha_beta in speculative.rs); the sibling test in
+    // speculative.rs covers the second site the same way.
+    #[test]
+    fn shorter_ply_mate_scores_higher_in_alpha_beta() {
+        let mut board_a = Board::from_sfen(MATE_IN_1_SFEN).unwrap();
+        let state_a = fresh_state(Tt::new(1));
+        let score_shallow = alpha_beta(
+            &state_a,
+            &mut board_a,
+            NEG_INF,
+            POS_INF,
+            2,
+            1,
+            true,
+            None,
+            None,
+        );
+
+        let mut board_b = Board::from_sfen(MATE_IN_1_SFEN).unwrap();
+        let state_b = fresh_state(Tt::new(1));
+        let score_deep = alpha_beta(
+            &state_b,
+            &mut board_b,
+            NEG_INF,
+            POS_INF,
+            2,
+            3,
+            true,
+            None,
+            None,
+        );
+
+        assert!(
+            score_shallow >= MATE_SCORE - 1000 && score_deep >= MATE_SCORE - 1000,
+            "both calls must report a forced mate: {score_shallow} / {score_deep}"
+        );
+        assert!(
+            score_shallow > score_deep,
+            "mate found at the shallower ply ({score_shallow}) must score higher than the \
+             identical mate found 2 plies deeper ({score_deep})"
+        );
+    }
+
+    // Note: SpeculativeSearcher.search()'s reported score comes from the same
+    // shared root_search/alpha_beta path as Searcher (SpeculativeSearcher only
+    // wraps it with preemptive background speculation), so it does not exercise
+    // speculative.rs's own independent copy of the mate-score formula. That
+    // second call site (`spec_alpha_beta`) is tested directly in
+    // speculative.rs::tests::shorter_mate_scores_higher_in_spec_alpha_beta.
+}
