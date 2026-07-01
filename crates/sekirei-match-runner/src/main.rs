@@ -1,7 +1,9 @@
 //! Sekirei match runner — USI-vs-USI game manager for strength testing.
 //!
 //! Usage:
-//!   sekirei-match --engine1 ./sekirei --engine2 /path/to/other --games 100 --byoyomi 10000
+//!
+//! ```text
+//! sekirei-match --engine1 ./sekirei --engine2 /path/to/other --games 100 --byoyomi 10000
 //!
 //! Options:
 //!   --engine1 <path>     first engine binary
@@ -14,6 +16,7 @@
 //!   --max-moves <n>      max moves before draw declaration (default: 512)
 //!   --positions <file>   file with one SFEN per line; games start from random positions
 //!   --json <file>        write result summary as JSON
+//! ```
 
 mod elo;
 mod engine;

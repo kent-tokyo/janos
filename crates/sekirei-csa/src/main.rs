@@ -1,7 +1,9 @@
 //! Sekirei CSA client — connects to a floodgate server and plays games.
 //!
 //! Usage:
-//!   sekirei-csa --user <name> --password <pass> [OPTIONS]
+//!
+//! ```text
+//! sekirei-csa --user <name> --password <pass> [OPTIONS]
 //!
 //! Options:
 //!   --server <host>    (default: wdoor.c.u-tokyo.ac.jp)
@@ -12,6 +14,7 @@
 //!   --resign <cp>      resign threshold centipawns (default: 2000)
 //!   --depth <n>        max search depth (default: 50)
 //!   --loop             reconnect after each game for continuous play
+//! ```
 
 mod moves;
 mod protocol;

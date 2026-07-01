@@ -7,7 +7,7 @@
 //! # Data
 //!
 //! Download floodgate game archives from:
-//!   http://wdoor.c.u-tokyo.ac.jp/shogi/
+//!   <http://wdoor.c.u-tokyo.ac.jp/shogi/>
 //! Extract .csa files into a directory and pass it as --games.
 
 mod csa;
