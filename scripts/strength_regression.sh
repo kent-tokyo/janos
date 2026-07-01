@@ -26,8 +26,8 @@ echo "=== Strength regression: $NEW vs $BASE ($GAMES games) ==="
 cargo build --release -q -p sekirei-match-runner -p sekirei
 
 cargo run --release -q -p sekirei-match-runner -- \
-  --engine1 "./target/release/sekirei $NEW" \
-  --engine2 "./target/release/sekirei $BASE" \
+  --engine1 ./target/release/sekirei --args1 "$NEW" \
+  --engine2 ./target/release/sekirei --args2 "$BASE" \
   --games "$GAMES" --byoyomi 1000 \
   --json "$OUT"
 
